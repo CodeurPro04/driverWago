@@ -1,87 +1,114 @@
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  SafeAreaView,
+  ScrollView,
+  TouchableOpacity,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing, DriverTypography } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
 
-const weeklyMock = [4500, 7200, 3800, 9100, 5400, 6700, 8200];
+const PERIODS = ['Jour', 'Semaine', 'Mois'] as const;
 
 export default function EarningsScreen() {
-  const { state } = useDriverStore();
+  const router = useRouter();
+  const { state, dispatch } = useDriverStore();
+  const [period, setPeriod] = useState<(typeof PERIODS)[number]>('Jour');
 
-  const totalWeek = useMemo(() => weeklyMock.reduce((sum, value) => sum + value, 0), []);
-  const maxValue = Math.max(...weeklyMock);
+  const completedCount = useMemo(
+    () => state.jobs.filter((job) => job.status === 'completed').length,
+    [state.jobs]
+  );
+
+  const totalEarnings = useMemo(
+    () => state.jobs.filter((job) => job.status === 'completed').reduce((sum, job) => sum + job.price, 0),
+    [state.jobs]
+  );
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <View>
-            <Text style={styles.title}>Gains</Text>
-            <Text style={styles.subtitle}>Suivi des revenus et paiements.</Text>
+          <View style={styles.statusPill}>
+            <TouchableOpacity
+              style={[styles.statusOption, !state.availability && styles.statusOptionActive]}
+              onPress={() => state.availability && dispatch({ type: 'TOGGLE_AVAILABILITY' })}
+            >
+              <Text style={[styles.statusText, !state.availability && styles.statusTextActive]}>
+                Hors ligne
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.statusOption, state.availability && styles.statusOptionActive]}
+              onPress={() => !state.availability && dispatch({ type: 'TOGGLE_AVAILABILITY' })}
+            >
+              <Text style={[styles.statusText, state.availability && styles.statusTextActive]}>
+                En ligne
+              </Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.headerIcon}>
-            <Ionicons name="download" size={18} color={DriverColors.primary} />
+          <TouchableOpacity style={styles.notificationButton} onPress={() => router.push('/notifications')}>
+            <Ionicons name="notifications-outline" size={20} color={DriverColors.primary} />
           </TouchableOpacity>
         </View>
 
-        <View style={styles.heroCard}>
-          <Text style={styles.heroLabel}>Solde disponible</Text>
-          <Text style={styles.heroValue}>{state.cashoutBalance.toLocaleString()} F CFA</Text>
-          <View style={styles.heroRow}>
-            <View style={styles.heroChip}>
-              <Ionicons name="calendar" size={14} color={DriverColors.accent} />
-              <Text style={styles.heroChipText}>Semaine: {totalWeek.toLocaleString()} F</Text>
-            </View>
-            <View style={styles.heroChip}>
-              <Ionicons name="wallet" size={14} color={DriverColors.secondary} />
-              <Text style={styles.heroChipText}>Paiement en attente</Text>
-            </View>
-          </View>
-          <TouchableOpacity style={styles.primaryButton}>
-            <Text style={styles.primaryButtonText}>Demander un retrait</Text>
-          </TouchableOpacity>
+        <View style={styles.segmented}>
+          {PERIODS.map((item) => {
+            const active = item === period;
+            return (
+              <TouchableOpacity
+                key={item}
+                style={[styles.segment, active && styles.segmentActive]}
+                onPress={() => setPeriod(item)}
+              >
+                <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{item}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
+
+        <View style={styles.overviewCard}>
+          <View style={styles.overviewItem}>
+            <Text style={styles.overviewValue}>{completedCount}</Text>
+            <Text style={styles.overviewLabel}>Commandes</Text>
+          </View>
+          <View style={styles.overviewDivider} />
+          <View style={styles.overviewItem}>
+            <Text style={styles.overviewValue}>{totalEarnings.toLocaleString()} F CFA</Text>
+            <Text style={styles.overviewLabel}>Gain net</Text>
+          </View>
+          <View style={styles.overviewDivider} />
+          <View style={styles.overviewItem}>
+            <Text style={styles.overviewValue}>{state.rating.toFixed(1)}</Text>
+            <Text style={styles.overviewLabel}>Évaluation</Text>
+          </View>
+        </View>
+
+        <TouchableOpacity style={styles.historyButton}>
+          <Ionicons name="time" size={16} color={DriverColors.primary} />
+          <Text style={styles.historyButtonText}>Voir l'historique des commandes</Text>
+        </TouchableOpacity>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Performance hebdomadaire</Text>
-          <Text style={styles.sectionMeta}>7 derniers jours</Text>
+          <Text style={styles.sectionTitle}>Votre progression</Text>
         </View>
 
         <View style={styles.chartCard}>
-          <View style={styles.chartRow}>
-            {weeklyMock.map((value, index) => {
-              const height = Math.max(22, (value / maxValue) * 120);
-              return (
-                <View key={`${value}-${index}`} style={styles.barWrap}>
-                  <View style={[styles.bar, { height }]} />
-                  <Text style={styles.barLabel}>{['L', 'M', 'M', 'J', 'V', 'S', 'D'][index]}</Text>
-                </View>
-              );
-            })}
+          <View style={styles.chartGrid}>
+            {[1, 2, 3, 4].map((row) => (
+              <View key={`row-${row}`} style={styles.chartRow} />
+            ))}
+          </View>
+          <View style={styles.chartLine} />
+          <View style={styles.chartPoint} />
+          <View style={styles.chartBadge}>
+            <Text style={styles.chartBadgeText}>2,000 F CFA</Text>
           </View>
         </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Historique r\u00e9cent</Text>
-          <Text style={styles.sectionMeta}>Mises \u00e0 jour</Text>
-        </View>
-
-        {[
-          { title: 'Paiement mobile money', amount: 12000, date: "Aujourd'hui" },
-          { title: 'Bonus disponibilit\u00e9', amount: 3000, date: 'Hier' },
-          { title: 'Retrait effectu\u00e9', amount: -8000, date: '12 mars' },
-        ].map((item, index) => (
-          <View key={`${item.title}-${index}`} style={styles.historyCard}>
-            <View>
-              <Text style={styles.historyTitle}>{item.title}</Text>
-              <Text style={styles.historyDate}>{item.date}</Text>
-            </View>
-            <Text style={[styles.historyAmount, item.amount < 0 && styles.historyAmountNegative]}>
-              {item.amount > 0 ? '+' : ''}{item.amount.toLocaleString()} F
-            </Text>
-          </View>
-        ))}
       </ScrollView>
     </SafeAreaView>
   );
@@ -102,140 +129,172 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: DriverSpacing.lg,
   },
-  title: {
-    ...DriverTypography.title,
+  statusPill: {
+    flexDirection: 'row',
+    backgroundColor: '#F3F4F6',
+    padding: 4,
+    borderRadius: 999,
   },
-  subtitle: {
-    fontSize: 13,
+  statusOption: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  statusOptionActive: {
+    backgroundColor: DriverColors.primary,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
     color: DriverColors.muted,
-    marginTop: 4,
   },
-  headerIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: DriverColors.surface,
-    borderWidth: 1,
-    borderColor: DriverColors.border,
+  statusTextActive: {
+    color: '#FFFFFF',
+  },
+  notificationButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F3F4F6',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heroCard: {
-    backgroundColor: DriverColors.primary,
-    borderRadius: DriverRadius.lg,
-    padding: DriverSpacing.lg,
+  segmented: {
+    flexDirection: 'row',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 999,
+    padding: 4,
     marginBottom: DriverSpacing.lg,
   },
-  heroLabel: {
+  segment: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  segmentActive: {
+    backgroundColor: DriverColors.primary,
+  },
+  segmentText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#E0E7FF',
+    color: DriverColors.muted,
   },
-  heroValue: {
-    fontSize: 30,
-    fontWeight: '700',
+  segmentTextActive: {
     color: '#FFFFFF',
-    marginTop: 6,
   },
-  heroRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
-  },
-  heroChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+  overviewCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: DriverRadius.md,
+    borderWidth: 1,
+    borderColor: DriverColors.border,
+    paddingVertical: 14,
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 999,
-  },
-  heroChipText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  primaryButton: {
-    marginTop: 16,
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 999,
-    backgroundColor: DriverColors.secondary,
+    justifyContent: 'space-between',
+    marginBottom: DriverSpacing.md,
   },
-  primaryButtonText: {
-    fontSize: 13,
+  overviewItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  overviewValue: {
+    fontSize: 14,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: DriverColors.text,
+  },
+  overviewLabel: {
+    fontSize: 11,
+    color: DriverColors.muted,
+  },
+  overviewDivider: {
+    width: 1,
+    height: 34,
+    backgroundColor: DriverColors.border,
+  },
+  historyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F9FAFB',
+    borderRadius: DriverRadius.md,
+    borderWidth: 1,
+    borderColor: DriverColors.border,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: DriverSpacing.lg,
+  },
+  historyButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: DriverColors.text,
   },
   sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     marginBottom: DriverSpacing.sm,
   },
   sectionTitle: {
     ...DriverTypography.section,
   },
-  sectionMeta: {
-    fontSize: 12,
-    color: DriverColors.muted,
-  },
   chartCard: {
-    backgroundColor: DriverColors.surface,
+    height: 220,
     borderRadius: DriverRadius.lg,
-    padding: DriverSpacing.md,
     borderWidth: 1,
     borderColor: DriverColors.border,
-    marginBottom: DriverSpacing.lg,
+    backgroundColor: '#F9FAFB',
+    overflow: 'hidden',
+  },
+  chartGrid: {
+    ...StyleSheet.absoluteFillObject,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    justifyContent: 'space-between',
   },
   chartRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    height: 150,
+    height: 1,
+    backgroundColor: '#E5E7EB',
+    opacity: 0.7,
   },
-  barWrap: {
-    alignItems: 'center',
-    flex: 1,
+  chartLine: {
+    position: 'absolute',
+    left: 24,
+    right: 24,
+    top: 80,
+    height: 120,
+    borderLeftWidth: 3,
+    borderBottomWidth: 3,
+    borderColor: DriverColors.primary,
+    borderBottomLeftRadius: 60,
   },
-  bar: {
-    width: 16,
-    borderRadius: 8,
+  chartPoint: {
+    position: 'absolute',
+    left: 70,
+    top: 92,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     backgroundColor: DriverColors.primary,
   },
-  barLabel: {
-    fontSize: 11,
-    color: DriverColors.muted,
-    marginTop: 6,
-  },
-  historyCard: {
-    backgroundColor: DriverColors.surface,
-    borderRadius: DriverRadius.md,
-    padding: DriverSpacing.md,
+  chartBadge: {
+    position: 'absolute',
+    left: 40,
+    top: 56,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: DriverColors.border,
-    marginBottom: DriverSpacing.sm,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 4,
   },
-  historyTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: DriverColors.text,
-  },
-  historyDate: {
+  chartBadgeText: {
     fontSize: 11,
-    color: DriverColors.muted,
-    marginTop: 4,
-  },
-  historyAmount: {
-    fontSize: 13,
     fontWeight: '700',
-    color: DriverColors.success,
-  },
-  historyAmountNegative: {
-    color: DriverColors.danger,
+    color: DriverColors.text,
   },
 });

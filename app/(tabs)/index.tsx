@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+﻿import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,6 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
-  Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,23 +16,13 @@ export default function DashboardScreen() {
   const router = useRouter();
   const { state, dispatch } = useDriverStore();
 
-  const activeJob = useMemo(() => {
-    if (!state.activeJobId) return null;
-    return state.jobs.find((job) => job.id == state.activeJobId) || null;
-  }, [state.activeJobId, state.jobs]);
-
   const pendingJobs = useMemo(
-    () => state.jobs.filter((job) => job.status == 'pending'),
-    [state.jobs]
-  );
-
-  const completedCount = useMemo(
-    () => state.jobs.filter((job) => job.status == 'completed').length,
+    () => state.jobs.filter((job) => job.status === 'pending'),
     [state.jobs]
   );
 
   const todayEarnings = useMemo(
-    () => state.jobs.filter((job) => job.status == 'completed').reduce((sum, job) => sum + job.price, 0),
+    () => state.jobs.filter((job) => job.status === 'completed').reduce((sum, job) => sum + job.price, 0),
     [state.jobs]
   );
 
@@ -41,97 +30,57 @@ export default function DashboardScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Bonjour {state.driverName},</Text>
-            <Text style={styles.subGreeting}>Pr\u00eat pour vos prochaines missions.</Text>
+          <View style={styles.statusPill}>
+            <TouchableOpacity
+              style={[styles.statusOption, !state.availability && styles.statusOptionActive]}
+              onPress={() => state.availability && dispatch({ type: 'TOGGLE_AVAILABILITY' })}
+            >
+              <Text style={[styles.statusText, !state.availability && styles.statusTextActive]}>
+                Hors ligne
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.statusOption, state.availability && styles.statusOptionActive]}
+              onPress={() => !state.availability && dispatch({ type: 'TOGGLE_AVAILABILITY' })}
+            >
+              <Text style={[styles.statusText, state.availability && styles.statusTextActive]}>
+                En ligne
+              </Text>
+            </TouchableOpacity>
           </View>
-          <View style={styles.availabilityCard}>
-            <Text style={styles.availabilityText}>{state.availability ? 'En ligne' : 'Hors ligne'}</Text>
-            <Switch
-              value={state.availability}
-              onValueChange={() => dispatch({ type: 'TOGGLE_AVAILABILITY' })}
-              trackColor={{ false: '#CBD5F5', true: '#9AE6E4' }}
-              thumbColor={state.availability ? DriverColors.secondary : '#FFFFFF'}
-            />
-          </View>
+          <TouchableOpacity style={styles.notificationButton} onPress={() => router.push('/notifications')}>
+            <Ionicons name="notifications-outline" size={20} color={DriverColors.primary} />
+          </TouchableOpacity>
         </View>
 
-        <View style={styles.heroCard}>
-          <View style={styles.heroGlow} />
-          <View style={styles.heroGlowAlt} />
-          <Text style={styles.heroTitle}>Objectif du jour</Text>
-          <Text style={styles.heroValue}>{todayEarnings.toLocaleString()} F CFA</Text>
-          <Text style={styles.heroCaption}>Gardez le rythme pour atteindre votre bonus.</Text>
-          <View style={styles.heroRow}>
-            <View style={styles.heroChip}>
-              <Ionicons name="star" size={14} color={DriverColors.accent} />
-              <Text style={styles.heroChipText}>{state.rating.toFixed(1)} note</Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Aperçu du jour</Text>
+          <View style={styles.overviewCard}>
+            <View style={styles.overviewItem}>
+              <Text style={styles.overviewValue}>{pendingJobs.length}</Text>
+              <Text style={styles.overviewLabel}>Commandes</Text>
             </View>
-            <View style={styles.heroChip}>
-              <Ionicons name="checkmark-circle" size={14} color={DriverColors.success} />
-              <Text style={styles.heroChipText}>{completedCount} termin\u00e9s</Text>
+            <View style={styles.overviewDivider} />
+            <View style={styles.overviewItem}>
+              <Text style={styles.overviewValue}>{todayEarnings.toLocaleString()} F CFA</Text>
+              <Text style={styles.overviewLabel}>Gain net</Text>
+            </View>
+            <View style={styles.overviewDivider} />
+            <View style={styles.overviewItem}>
+              <Text style={styles.overviewValue}>{state.rating.toFixed(1)}</Text>
+              <Text style={styles.overviewLabel}>Évaluation</Text>
             </View>
           </View>
         </View>
-
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{pendingJobs.length}</Text>
-            <Text style={styles.statLabel}>Demandes</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{completedCount}</Text>
-            <Text style={styles.statLabel}>Livr\u00e9s</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{state.cashoutBalance.toLocaleString()}</Text>
-            <Text style={styles.statLabel}>Solde (F)</Text>
-          </View>
-        </View>
-
-        {activeJob ? (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Mission en cours</Text>
-              <TouchableOpacity onPress={() => router.push('/(tabs)/active')}>
-                <Text style={styles.linkText}>Voir</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.activeCard}>
-              <View style={styles.activeHeader}>
-                <View>
-                  <Text style={styles.activeTitle}>{activeJob.customerName}</Text>
-                  <Text style={styles.activeSubtitle}>{activeJob.service}</Text>
-                </View>
-                <View style={styles.activeBadge}>
-                  <Ionicons name="navigate" size={12} color={DriverColors.primary} />
-                  <Text style={styles.activeBadgeText}>{activeJob.etaMin} min</Text>
-                </View>
-              </View>
-              <View style={styles.activeRow}>
-                <Ionicons name="location" size={16} color={DriverColors.primary} />
-                <Text style={styles.activeAddress} numberOfLines={2}>
-                  {activeJob.address}
-                </Text>
-              </View>
-              <View style={styles.activeFooter}>
-                <Text style={styles.activePrice}>{activeJob.price.toLocaleString()} F CFA</Text>
-                <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/(tabs)/active')}>
-                  <Text style={styles.primaryButtonText}>Ouvrir l'itin\u00e9raire</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        ) : null}
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Nouvelles demandes</Text>
+            <Text style={styles.sectionTitle}>Demandes disponibles</Text>
             <TouchableOpacity onPress={() => router.push('/(tabs)/jobs')}>
               <Text style={styles.linkText}>Tout voir</Text>
             </TouchableOpacity>
           </View>
-          {pendingJobs.length == 0 ? (
+          {pendingJobs.length === 0 ? (
             <View style={styles.emptyCard}>
               <Ionicons name="sparkles" size={20} color={DriverColors.primary} />
               <Text style={styles.emptyTitle}>Aucune demande pour l'instant</Text>
@@ -139,33 +88,50 @@ export default function DashboardScreen() {
             </View>
           ) : (
             pendingJobs.map((job) => (
-              <View key={job.id} style={styles.jobCard}>
-                <View style={styles.jobHeader}>
-                  <View>
-                    <Text style={styles.jobName}>{job.customerName}</Text>
-                    <Text style={styles.jobMeta}>{job.service} \u2022 {job.vehicle}</Text>
+              <TouchableOpacity
+                key={job.id}
+                style={styles.requestCard}
+                activeOpacity={0.9}
+                onPress={() => router.push({ pathname: '/job-details', params: { id: job.id } })}
+              >
+                <View style={styles.requestHeader}>
+                  <View style={styles.requestUser}>
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>{job.customerName.charAt(0)}</Text>
+                    </View>
+                    <View>
+                      <Text style={styles.requestName}>{job.customerName}</Text>
+                      <View style={styles.ratingRow}>
+                        <Ionicons name="star" size={12} color={DriverColors.accent} />
+                        <Text style={styles.ratingText}>{state.rating.toFixed(1)}</Text>
+                      </View>
+                    </View>
                   </View>
-                  <Text style={styles.jobPrice}>{job.price.toLocaleString()} F CFA</Text>
+                  <View style={styles.requestPriceWrap}>
+                    <Text style={styles.requestPrice}>{job.price.toLocaleString()} F CFA</Text>
+                    <Text style={styles.requestMeta}>Demande immédiate</Text>
+                  </View>
                 </View>
-                <View style={styles.jobRow}>
-                  <Ionicons name="location-outline" size={14} color={DriverColors.muted} />
-                  <Text style={styles.jobAddress} numberOfLines={2}>{job.address}</Text>
+
+                <View style={styles.requestRow}>
+                  <Ionicons name="car" size={14} color={DriverColors.primary} />
+                  <Text style={styles.requestRowText}>{job.vehicle}</Text>
                 </View>
-                <View style={styles.jobActions}>
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.acceptButton]}
-                    onPress={() => dispatch({ type: 'ACCEPT_JOB', id: job.id })}
-                  >
-                    <Text style={styles.actionText}>Accepter</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.declineButton]}
-                    onPress={() => dispatch({ type: 'DECLINE_JOB', id: job.id })}
-                  >
-                    <Text style={styles.declineText}>Refuser</Text>
-                  </TouchableOpacity>
+                <View style={styles.requestRow}>
+                  <Ionicons name="sparkles" size={14} color={DriverColors.primary} />
+                  <Text style={styles.requestRowText}>{job.service}</Text>
                 </View>
-              </View>
+                <View style={styles.requestRow}>
+                  <Ionicons name="location" size={14} color={DriverColors.primary} />
+                  <Text style={styles.requestRowText} numberOfLines={2}>
+                    {job.address}
+                  </Text>
+                </View>
+                <View style={styles.requestFooter}>
+                  <Text style={styles.requestDistance}>À {job.distanceKm.toFixed(1)} km</Text>
+                  <Text style={styles.requestDistance}>{job.etaMin} min</Text>
+                </View>
+              </TouchableOpacity>
             ))
           )}
         </View>
@@ -189,116 +155,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: DriverSpacing.lg,
   },
-  greeting: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: DriverColors.text,
-  },
-  subGreeting: {
-    fontSize: 13,
-    color: DriverColors.muted,
-    marginTop: 4,
-  },
-  availabilityCard: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: DriverColors.surface,
-    borderRadius: DriverRadius.lg,
-    borderWidth: 1,
-    borderColor: DriverColors.border,
-    alignItems: 'center',
-    gap: 6,
-  },
-  availabilityText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: DriverColors.primary,
-  },
-  heroCard: {
-    backgroundColor: DriverColors.primary,
-    borderRadius: DriverRadius.lg,
-    padding: DriverSpacing.lg,
-    marginBottom: DriverSpacing.lg,
-    overflow: 'hidden',
-  },
-  heroGlow: {
-    position: 'absolute',
-    width: 180,
-    height: 180,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderRadius: 90,
-    top: -40,
-    right: -30,
-  },
-  heroGlowAlt: {
-    position: 'absolute',
-    width: 120,
-    height: 120,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 60,
-    bottom: -30,
-    left: -20,
-  },
-  heroTitle: {
-    fontSize: 14,
-    color: '#E0E7FF',
-    fontWeight: '600',
-  },
-  heroValue: {
-    fontSize: 30,
-    color: '#FFFFFF',
-    fontWeight: '700',
-    marginTop: 8,
-  },
-  heroCaption: {
-    fontSize: 12,
-    color: '#E0F2FE',
-    marginTop: 6,
-  },
-  heroRow: {
+  statusPill: {
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 14,
-  },
-  heroChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: '#F3F4F6',
+    padding: 4,
     borderRadius: 999,
   },
-  heroChipText: {
-    color: '#FFFFFF',
-    fontSize: 11,
+  statusOption: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  statusOptionActive: {
+    backgroundColor: DriverColors.primary,
+  },
+  statusText: {
+    fontSize: 12,
     fontWeight: '600',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: DriverSpacing.sm,
-    marginBottom: DriverSpacing.lg,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: DriverColors.surface,
-    borderRadius: DriverRadius.md,
-    padding: DriverSpacing.md,
-    borderWidth: 1,
-    borderColor: DriverColors.border,
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: DriverColors.text,
-  },
-  statLabel: {
-    fontSize: 11,
     color: DriverColors.muted,
-    marginTop: 4,
+  },
+  statusTextActive: {
+    color: '#FFFFFF',
+  },
+  notificationButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   section: {
     marginBottom: DriverSpacing.lg,
+  },
+  sectionTitle: {
+    ...DriverTypography.section,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -306,87 +197,46 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: DriverSpacing.sm,
   },
-  sectionTitle: {
-    ...DriverTypography.section,
-  },
   linkText: {
     fontSize: 12,
     fontWeight: '600',
     color: DriverColors.primary,
   },
-  activeCard: {
-    backgroundColor: DriverColors.surface,
-    borderRadius: DriverRadius.lg,
-    padding: DriverSpacing.md,
+  overviewCard: {
+    marginTop: DriverSpacing.sm,
+    backgroundColor: '#F9FAFB',
+    borderRadius: DriverRadius.md,
     borderWidth: 1,
-    borderColor: DriverColors.cardBorder,
-  },
-  activeHeader: {
+    borderColor: DriverColors.border,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: DriverSpacing.sm,
+    justifyContent: 'space-between',
   },
-  activeTitle: {
-    fontSize: 16,
+  overviewItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  overviewValue: {
+    fontSize: 14,
     fontWeight: '700',
     color: DriverColors.text,
   },
-  activeSubtitle: {
-    fontSize: 12,
-    color: DriverColors.muted,
-    marginTop: 4,
-  },
-  activeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: DriverColors.chip,
-    borderRadius: 999,
-  },
-  activeBadgeText: {
+  overviewLabel: {
     fontSize: 11,
-    fontWeight: '600',
-    color: DriverColors.chipText,
-  },
-  activeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: DriverSpacing.md,
-  },
-  activeAddress: {
-    flex: 1,
-    fontSize: 12,
     color: DriverColors.muted,
   },
-  activeFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  activePrice: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: DriverColors.primary,
-  },
-  primaryButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: DriverColors.primary,
-  },
-  primaryButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#FFFFFF',
+  overviewDivider: {
+    width: 1,
+    height: 34,
+    backgroundColor: DriverColors.border,
   },
   emptyCard: {
     padding: DriverSpacing.lg,
-    borderRadius: DriverRadius.lg,
-    backgroundColor: DriverColors.surface,
+    borderRadius: DriverRadius.md,
+    backgroundColor: '#F9FAFB',
     borderWidth: 1,
     borderColor: DriverColors.border,
     alignItems: 'center',
@@ -402,70 +252,84 @@ const styles = StyleSheet.create({
     color: DriverColors.muted,
     textAlign: 'center',
   },
-  jobCard: {
-    backgroundColor: DriverColors.surface,
-    borderRadius: DriverRadius.lg,
-    padding: DriverSpacing.md,
+  requestCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: DriverRadius.md,
     borderWidth: 1,
     borderColor: DriverColors.border,
+    padding: DriverSpacing.md,
     marginBottom: DriverSpacing.sm,
   },
-  jobHeader: {
+  requestHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    marginBottom: DriverSpacing.sm,
   },
-  jobName: {
-    fontSize: 15,
+  requestUser: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: DriverColors.muted,
+  },
+  requestName: {
+    fontSize: 14,
     fontWeight: '700',
     color: DriverColors.text,
   },
-  jobMeta: {
-    fontSize: 12,
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  ratingText: {
+    fontSize: 11,
     color: DriverColors.muted,
+  },
+  requestPriceWrap: {
+    alignItems: 'flex-end',
+  },
+  requestPrice: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: DriverColors.text,
+  },
+  requestMeta: {
+    fontSize: 11,
+    color: DriverColors.muted,
+    marginTop: 2,
+  },
+  requestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  requestRowText: {
+    flex: 1,
+    fontSize: 12,
+    color: DriverColors.text,
+  },
+  requestFooter: {
+    flexDirection: 'row',
+    gap: 12,
     marginTop: 4,
   },
-  jobPrice: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: DriverColors.primary,
-  },
-  jobRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: DriverSpacing.sm,
-  },
-  jobAddress: {
-    flex: 1,
-    fontSize: 12,
+  requestDistance: {
+    fontSize: 11,
     color: DriverColors.muted,
-  },
-  jobActions: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: DriverSpacing.md,
-  },
-  actionButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 999,
-    alignItems: 'center',
-  },
-  acceptButton: {
-    backgroundColor: DriverColors.primary,
-  },
-  declineButton: {
-    backgroundColor: '#FEE2E2',
-  },
-  actionText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  declineText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: DriverColors.danger,
   },
 });

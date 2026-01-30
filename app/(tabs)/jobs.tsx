@@ -1,12 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  ScrollView,
-  TouchableOpacity,
-} from 'react-native';
+﻿import React, { useMemo, useState } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing, DriverTypography } from '@/constants/driverTheme';
@@ -16,8 +9,8 @@ const FILTERS = [
   { id: 'all', label: 'Tout' },
   { id: 'pending', label: 'Nouvelles' },
   { id: 'active', label: 'En cours' },
-  { id: 'completed', label: 'Termin\u00e9es' },
-  { id: 'cancelled', label: 'Annul\u00e9es' },
+  { id: 'completed', label: 'Terminées' },
+  { id: 'cancelled', label: 'Annulées' },
 ];
 
 export default function JobsScreen() {
@@ -27,16 +20,6 @@ export default function JobsScreen() {
 
   const activeJobs = useMemo(
     () => state.jobs.filter((job) => ['accepted', 'enRoute', 'arrived', 'washing'].includes(job.status)),
-    [state.jobs]
-  );
-
-  const pendingJobs = useMemo(
-    () => state.jobs.filter((job) => job.status === 'pending'),
-    [state.jobs]
-  );
-
-  const completedJobs = useMemo(
-    () => state.jobs.filter((job) => job.status === 'completed'),
     [state.jobs]
   );
 
@@ -51,26 +34,11 @@ export default function JobsScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <View>
-            <Text style={styles.title}>Missions</Text>
-            <Text style={styles.subtitle}>G\u00e9rez vos demandes en temps r\u00e9el.</Text>
+            <Text style={styles.title}>Demandes</Text>
+            <Text style={styles.subtitle}>Gérez vos missions en temps réel.</Text>
           </View>
           <View style={styles.headerIcon}>
             <Ionicons name="options" size={18} color={DriverColors.primary} />
-          </View>
-        </View>
-
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{pendingJobs.length}</Text>
-            <Text style={styles.statLabel}>Nouvelles</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{activeJobs.length}</Text>
-            <Text style={styles.statLabel}>En cours</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{completedJobs.length}</Text>
-            <Text style={styles.statLabel}>Termin\u00e9es</Text>
           </View>
         </View>
 
@@ -101,80 +69,53 @@ export default function JobsScreen() {
             <Text style={styles.emptyText}>Revenez plus tard pour de nouvelles demandes.</Text>
           </View>
         ) : (
-          filteredJobs.map((job) => {
-            const statusLabel =
-              job.status === 'pending'
-                ? 'Nouvelle'
-                : job.status === 'completed'
-                  ? 'Termin\u00e9e'
-                  : job.status === 'cancelled'
-                    ? 'Annul\u00e9e'
-                    : 'En cours';
-            const statusColor =
-              job.status === 'completed'
-                ? DriverColors.success
-                : job.status === 'cancelled'
-                  ? DriverColors.danger
-                  : job.status === 'pending'
-                    ? DriverColors.accent
-                    : DriverColors.primary;
+          filteredJobs.map((job) => (
+            <TouchableOpacity
+              key={job.id}
+              style={styles.card}
+              activeOpacity={0.9}
+              onPress={() => router.push({ pathname: '/job-details', params: { id: job.id } })}
+            >
+              <View style={styles.cardHeader}>
+                <View>
+                  <Text style={styles.cardTitle}>{job.customerName}</Text>
+                  <Text style={styles.cardSubtitle}>{job.service} • {job.vehicle}</Text>
+                </View>
+                <Text style={styles.cardPrice}>{job.price.toLocaleString()} F CFA</Text>
+              </View>
 
-            return (
-              <TouchableOpacity
-                key={job.id}
-                style={styles.card}
-                activeOpacity={0.9}
-                onPress={() => router.push({ pathname: '/job-details', params: { id: job.id } })}
-              >
-                <View style={styles.cardHeader}>
-                  <View>
-                    <Text style={styles.cardTitle}>{job.customerName}</Text>
-                    <Text style={styles.cardSubtitle}>{job.service} \u2022 {job.vehicle}</Text>
-                  </View>
-                  <View style={[styles.statusBadge, { backgroundColor: `${statusColor}22` }]}>
-                    <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
-                  </View>
-                </View>
+              <View style={styles.cardRow}>
+                <Ionicons name="location" size={14} color={DriverColors.primary} />
+                <Text style={styles.cardAddress} numberOfLines={2}>{job.address}</Text>
+              </View>
+              <View style={styles.cardRow}>
+                <Ionicons name="time" size={14} color={DriverColors.primary} />
+                <Text style={styles.cardMeta}>{job.scheduledAt} • {job.etaMin} min</Text>
+              </View>
 
-                <View style={styles.cardRow}>
-                  <Ionicons name="location" size={14} color={DriverColors.muted} />
-                  <Text style={styles.cardAddress} numberOfLines={2}>{job.address}</Text>
+              {job.status === 'pending' ? (
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={[styles.actionButton, styles.acceptButton]}
+                    onPress={() => dispatch({ type: 'ACCEPT_JOB', id: job.id })}
+                  >
+                    <Text style={styles.actionText}>Accepter</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.actionButton, styles.declineButton]}
+                    onPress={() => dispatch({ type: 'DECLINE_JOB', id: job.id })}
+                  >
+                    <Text style={styles.declineText}>Refuser</Text>
+                  </TouchableOpacity>
                 </View>
-                <View style={styles.cardRow}>
-                  <Ionicons name="time" size={14} color={DriverColors.muted} />
-                  <Text style={styles.cardMeta}>{job.scheduledAt} \u2022 {job.etaMin} min</Text>
+              ) : (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailText}>Détails</Text>
+                  <Ionicons name="chevron-forward" size={14} color={DriverColors.primary} />
                 </View>
-
-                <View style={styles.cardFooter}>
-                  <Text style={styles.cardPrice}>{job.price.toLocaleString()} F CFA</Text>
-                  {job.status === 'pending' ? (
-                    <View style={styles.actionRow}>
-                      <TouchableOpacity
-                        style={[styles.actionButton, styles.acceptButton]}
-                        onPress={() => dispatch({ type: 'ACCEPT_JOB', id: job.id })}
-                      >
-                        <Text style={styles.actionText}>Accepter</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.actionButton, styles.declineButton]}
-                        onPress={() => dispatch({ type: 'DECLINE_JOB', id: job.id })}
-                      >
-                        <Text style={styles.declineText}>Refuser</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ) : (
-                    <TouchableOpacity
-                      style={styles.detailButton}
-                      onPress={() => router.push({ pathname: '/job-details', params: { id: job.id } })}
-                    >
-                      <Text style={styles.detailText}>D\u00e9tails</Text>
-                      <Ionicons name="chevron-forward" size={14} color={DriverColors.primary} />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </TouchableOpacity>
-            );
-          })
+              )}
+            </TouchableOpacity>
+          ))
         )}
       </ScrollView>
     </SafeAreaView>
@@ -208,35 +149,11 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: DriverColors.surface,
+    backgroundColor: '#F3F4F6',
     borderWidth: 1,
     borderColor: DriverColors.border,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: DriverSpacing.sm,
-    marginBottom: DriverSpacing.lg,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: DriverColors.surface,
-    borderRadius: DriverRadius.md,
-    padding: DriverSpacing.md,
-    borderWidth: 1,
-    borderColor: DriverColors.border,
-    alignItems: 'center',
-    gap: 4,
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: DriverColors.text,
-  },
-  statLabel: {
-    fontSize: 11,
-    color: DriverColors.muted,
   },
   filters: {
     gap: DriverSpacing.sm,
@@ -248,7 +165,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: DriverColors.border,
-    backgroundColor: DriverColors.surface,
+    backgroundColor: '#F9FAFB',
   },
   filterChipActive: {
     borderColor: DriverColors.primary,
@@ -278,7 +195,7 @@ const styles = StyleSheet.create({
   emptyCard: {
     padding: DriverSpacing.lg,
     borderRadius: DriverRadius.lg,
-    backgroundColor: DriverColors.surface,
+    backgroundColor: '#F9FAFB',
     borderWidth: 1,
     borderColor: DriverColors.border,
     alignItems: 'center',
@@ -295,7 +212,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   card: {
-    backgroundColor: DriverColors.surface,
+    backgroundColor: '#F9FAFB',
     borderRadius: DriverRadius.lg,
     padding: DriverSpacing.md,
     borderWidth: 1,
@@ -306,6 +223,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    marginBottom: DriverSpacing.sm,
   },
   cardTitle: {
     fontSize: 15,
@@ -317,49 +235,36 @@ const styles = StyleSheet.create({
     color: DriverColors.muted,
     marginTop: 4,
   },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  statusText: {
-    fontSize: 11,
+  cardPrice: {
+    fontSize: 13,
     fontWeight: '700',
+    color: DriverColors.text,
   },
   cardRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: DriverSpacing.sm,
+    marginBottom: 6,
   },
   cardAddress: {
     flex: 1,
     fontSize: 12,
-    color: DriverColors.muted,
+    color: DriverColors.text,
   },
   cardMeta: {
     fontSize: 12,
     color: DriverColors.muted,
   },
-  cardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: DriverSpacing.md,
-  },
-  cardPrice: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: DriverColors.primary,
-  },
   actionRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 10,
+    marginTop: DriverSpacing.md,
   },
   actionButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    flex: 1,
+    paddingVertical: 10,
     borderRadius: 999,
+    alignItems: 'center',
   },
   acceptButton: {
     backgroundColor: DriverColors.primary,
@@ -377,10 +282,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: DriverColors.danger,
   },
-  detailButton: {
+  detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    marginTop: DriverSpacing.md,
   },
   detailText: {
     fontSize: 12,

@@ -1,18 +1,18 @@
 export const DriverColors = {
-  background: '#F4F6FB',
+  background: '#FFFFFF',
   surface: '#FFFFFF',
-  text: '#0F172A',
-  muted: '#64748B',
-  primary: '#1E3A8A',
-  secondary: '#0EA5A4',
-  accent: '#F97316',
+  text: '#111827',
+  muted: '#6B7280',
+  primary: '#0B63F6',
+  secondary: '#1D4ED8',
+  accent: '#F59E0B',
   success: '#16A34A',
   warning: '#F59E0B',
   danger: '#EF4444',
-  border: '#E2E8F0',
+  border: '#E5E7EB',
   cardBorder: '#EEF2FF',
-  chip: '#E0E7FF',
-  chipText: '#1E3A8A',
+  chip: '#EFF6FF',
+  chipText: '#1D4ED8',
 };
 
 export const DriverSpacing = {

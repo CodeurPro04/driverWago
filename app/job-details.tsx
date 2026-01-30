@@ -1,23 +1,26 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Image, Modal } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useMemo, useState, useEffect } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Platform, Linking, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
-import SignatureScreen from 'react-native-signature-canvas';
-import { DriverColors, DriverRadius, DriverSpacing, DriverTypography } from '@/constants/driverTheme';
+import { requireNativeModule } from 'expo-modules-core';
+import * as Location from 'expo-location';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { DriverColors, DriverRadius, DriverSpacing } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
-
-const STEP_LABELS = ['Demande', 'En route', 'Arriv\u00e9', 'Lavage', 'Termin\u00e9'];
+import BerlineSvg from "@/assets/svg/berline.svg";
+import CompacteSvg from "@/assets/svg/compacte.svg";
+import SuvSvg from "@/assets/svg/suv.svg";
+import GroupSvg from "@/assets/svg/Group.svg";
+import Group5Svg from "@/assets/svg/Group5.svg";
+import Group7Svg from "@/assets/svg/Group7.svg";
 
 export default function JobDetailsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { state, dispatch } = useDriverStore();
-  const [beforePhoto, setBeforePhoto] = useState<string | null>(null);
-  const [afterPhoto, setAfterPhoto] = useState<string | null>(null);
-  const [signature, setSignature] = useState<string | null>(null);
-  const [rating, setRating] = useState(0);
-  const [signatureOpen, setSignatureOpen] = useState(false);
+  const [camera, setCamera] = useState({
+    coordinates: { latitude: 5.3364, longitude: -4.0267 },
+    zoom: 13,
+  });
 
   const job = useMemo(() => {
     const id = params.id as string | undefined;
@@ -25,28 +28,104 @@ export default function JobDetailsScreen() {
     return state.jobs.find((item) => item.id === id) || null;
   }, [params.id, state.jobs]);
 
-  const currentStepIndex = useMemo(() => {
-    if (!job) return 0;
-    if (job.status === 'pending') return 0;
-    if (job.status === 'accepted' || job.status === 'enRoute') return 1;
-    if (job.status === 'arrived') return 2;
-    if (job.status === 'washing') return 3;
-    if (job.status === 'completed') return 4;
-    return 0;
+  const normalize = (value: string) =>
+    value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  const vehicleIcon = useMemo(() => {
+    if (!job) return null;
+    const key = normalize(job.vehicle);
+    if (key.includes('suv')) return SuvSvg;
+    if (key.includes('compact')) return CompacteSvg;
+    if (key.includes('berline')) return BerlineSvg;
+    return null;
   }, [job]);
 
-  const pickImage = async (setter: (uri: string | null) => void) => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') return;
-    const result = await ImagePicker.launchImageLibraryAsync({
-      quality: 0.7,
-      allowsEditing: true,
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-    });
-    if (!result.canceled) {
-      setter(result.assets[0].uri);
+  const washIcon = useMemo(() => {
+    if (!job) return Group7Svg;
+    const key = normalize(job.service);
+    if (key.includes('complet')) return Group7Svg;
+    if (key.includes('interieur')) return Group5Svg;
+    if (key.includes('exterieur')) return GroupSvg;
+    return Group7Svg;
+  }, [job]);
+
+  const VehicleIcon = vehicleIcon;
+  const WashIcon = washIcon;
+
+  const renderIcon = (IconComponent: any, fallbackName: keyof typeof Ionicons.glyphMap) => {
+    if (!IconComponent) {
+      return <Ionicons name={fallbackName} size={20} color={DriverColors.primary} />;
     }
+    if (typeof IconComponent === 'number') {
+      return <Image source={IconComponent} style={styles.tagImage} />;
+    }
+    return <IconComponent width={28} height={28} />;
   };
+
+  useEffect(() => {
+    if (!job) return;
+    setCamera((prev) => ({
+      ...prev,
+      coordinates: { latitude: job.latitude, longitude: job.longitude },
+    }));
+  }, [job]);
+
+  useEffect(() => {
+    let mounted = true;
+    const init = async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        if (!mounted) return;
+        setCamera((prev) => ({
+          ...prev,
+          coordinates: { latitude: location.coords.latitude, longitude: location.coords.longitude },
+        }));
+      } catch (error) {
+        // Keep fallback camera.
+      }
+    };
+    init();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const markers = useMemo(() => {
+    if (!job) return [];
+    return [
+      {
+        id: job.id,
+        coordinates: { latitude: job.latitude, longitude: job.longitude },
+        title: job.customerName,
+        snippet: job.address,
+        tintColor: DriverColors.primary,
+      },
+    ];
+  }, [job]);
+
+  const openExternalMaps = () => {
+    if (!job) return;
+    const { latitude, longitude } = job;
+    const url = Platform.OS === 'ios'
+      ? `http://maps.apple.com/?daddr=${latitude},${longitude}`
+      : `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
+    Linking.openURL(url);
+  };
+
+  let hasExpoMaps = true;
+  let MapView: any = null;
+  try {
+    requireNativeModule('ExpoMaps');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const ExpoMaps = require('expo-maps');
+    MapView = Platform.OS === 'ios' ? ExpoMaps.AppleMaps.View : ExpoMaps.GoogleMaps.View;
+  } catch (error) {
+    hasExpoMaps = false;
+  }
 
   if (!job) {
     return (
@@ -64,147 +143,107 @@ export default function JobDetailsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <Ionicons name="chevron-back" size={18} color={DriverColors.text} />
-          </TouchableOpacity>
-          <View>
-            <Text style={styles.title}>D\u00e9tails mission</Text>
-            <Text style={styles.subtitle}>{job.service}</Text>
+      <View style={styles.mapSection}>
+        {hasExpoMaps ? (
+          <MapView
+            style={styles.map}
+            cameraPosition={camera}
+            markers={markers}
+            uiSettings={{
+              compassEnabled: false,
+              myLocationButtonEnabled: false,
+            }}
+            properties={{
+              isMyLocationEnabled: true,
+            }}
+          />
+        ) : (
+          <View style={styles.mapFallback}>
+            <Ionicons name="map" size={26} color={DriverColors.primary} />
+            <Text style={styles.mapFallbackTitle}>Carte indisponible (Expo Go)</Text>
+            <Text style={styles.mapFallbackText}>
+              Installez un dev build pour activer la carte.
+            </Text>
           </View>
-        </View>
+        )}
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <Ionicons name="chevron-back" size={18} color={DriverColors.primary} />
+        </TouchableOpacity>
+      </View>
 
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>{job.customerName}</Text>
-            <Text style={styles.cardPrice}>{job.price.toLocaleString()} F CFA</Text>
-          </View>
-          <Text style={styles.cardMeta}>{job.vehicle}</Text>
-          <View style={styles.cardRow}>
-            <Ionicons name="location" size={14} color={DriverColors.muted} />
-            <Text style={styles.cardText}>{job.address}</Text>
-          </View>
-          <View style={styles.cardRow}>
-            <Ionicons name="time" size={14} color={DriverColors.muted} />
-            <Text style={styles.cardText}>{job.scheduledAt}</Text>
-          </View>
-        </View>
+      <ScrollView contentContainerStyle={styles.sheet} showsVerticalScrollIndicator={false}>
+        <View style={styles.sheetHandle} />
 
-        <View style={styles.timelineCard}>
-          <Text style={styles.sectionTitle}>Timeline</Text>
-          {STEP_LABELS.map((label, index) => {
-            const isActive = index <= currentStepIndex;
-            return (
-              <View key={label} style={styles.timelineRow}>
-                <View style={[styles.timelineDot, isActive && styles.timelineDotActive]} />
-                <Text style={[styles.timelineText, isActive && styles.timelineTextActive]}>
-                  {label}
-                </Text>
+        <View style={styles.clientCard}>
+          <View style={styles.clientRow}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{job.customerName.charAt(0)}</Text>
+            </View>
+            <View style={styles.clientInfo}>
+              <Text style={styles.clientName}>{job.customerName}</Text>
+              <View style={styles.ratingRow}>
+                <Ionicons name="star" size={12} color={DriverColors.accent} />
+                <Text style={styles.ratingText}>4.5</Text>
               </View>
-            );
-          })}
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Actions avanc\u00e9es</Text>
-          <Text style={styles.sectionMeta}>Preuves et validation</Text>
-        </View>
-
-        <View style={styles.actionGrid}>
-          <TouchableOpacity
-            style={[styles.actionTile, beforePhoto && styles.actionTileActive]}
-            onPress={() => pickImage(setBeforePhoto)}
-          >
-            <Ionicons name="camera" size={18} color={beforePhoto ? '#FFFFFF' : DriverColors.primary} />
-            <Text style={[styles.actionLabel, beforePhoto && styles.actionLabelActive]}>
-              Photo avant
-            </Text>
-            <Text style={[styles.actionSub, beforePhoto && styles.actionLabelActive]}>
-              {beforePhoto ? 'Ajout\u00e9e' : 'Ajouter'}
-            </Text>
-            {beforePhoto ? <Image source={{ uri: beforePhoto }} style={styles.preview} /> : null}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionTile, afterPhoto && styles.actionTileActive]}
-            onPress={() => pickImage(setAfterPhoto)}
-          >
-            <Ionicons name="camera-reverse" size={18} color={afterPhoto ? '#FFFFFF' : DriverColors.primary} />
-            <Text style={[styles.actionLabel, afterPhoto && styles.actionLabelActive]}>
-              Photo apr\u00e8s
-            </Text>
-            <Text style={[styles.actionSub, afterPhoto && styles.actionLabelActive]}>
-              {afterPhoto ? 'Ajout\u00e9e' : 'Ajouter'}
-            </Text>
-            {afterPhoto ? <Image source={{ uri: afterPhoto }} style={styles.preview} /> : null}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionTile, signature && styles.actionTileActive]}
-            onPress={() => setSignatureOpen(true)}
-          >
-            <Ionicons name="pencil" size={18} color={signature ? '#FFFFFF' : DriverColors.primary} />
-            <Text style={[styles.actionLabel, signature && styles.actionLabelActive]}>
-              Signature client
-            </Text>
-            <Text style={[styles.actionSub, signature && styles.actionLabelActive]}>
-              {signature ? 'Collect\u00e9e' : 'Collecter'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.ratingCard}>
-          <Text style={styles.sectionTitle}>Note client</Text>
-          <View style={styles.ratingRow}>
-            {[1, 2, 3, 4, 5].map((value) => (
-              <TouchableOpacity key={value} onPress={() => setRating(value)}>
-                <Ionicons
-                  name={rating >= value ? 'star' : 'star-outline'}
-                  size={20}
-                  color={rating >= value ? DriverColors.accent : DriverColors.border}
-                />
-              </TouchableOpacity>
-            ))}
+            </View>
           </View>
-          <Text style={styles.ratingHint}>
-            {rating ? `${rating}/5 - Merci pour votre retour.` : 'Attribuez une note au client.'}
-          </Text>
+
+          <View style={styles.infoRow}>
+            <Ionicons name="location" size={14} color={DriverColors.primary} />
+            <Text style={styles.infoText}>{job.address}</Text>
+          </View>
+          <Text style={styles.metaText}>À {job.distanceKm.toFixed(1)} km | {job.etaMin} min</Text>
+
+          <View style={styles.infoRow}>
+            <Ionicons name="time" size={14} color={DriverColors.primary} />
+            <Text style={styles.infoText}>{job.scheduledAt}</Text>
+          </View>
+
+          <View style={styles.priceRow}>
+            <Text style={styles.priceValue}>{job.price.toLocaleString()} F CFA</Text>
+            <Text style={styles.priceMeta}>
+              Vous recevrez {(job.price * 0.8).toLocaleString()} F CFA après la commission de Ziwago.
+            </Text>
+          </View>
         </View>
 
-        <View style={styles.footer}>
+          <View style={styles.tagRow}>
+          <View style={styles.tagCard}>
+            {renderIcon(VehicleIcon, 'car')}
+            <Text style={styles.tagText}>{job.vehicle}</Text>
+          </View>
+          <View style={styles.tagCard}>
+            {renderIcon(WashIcon, 'sparkles')}
+            <Text style={styles.tagText}>{job.service}</Text>
+          </View>
+        </View>
+
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => {
+              dispatch({ type: 'DECLINE_JOB', id: job.id });
+              router.back();
+            }}
+          >
+            <Text style={styles.secondaryButtonText}>Refuser</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.primaryButton}
-            onPress={() => dispatch({ type: 'COMPLETE_JOB', id: job.id })}
+            onPress={() => {
+              dispatch({ type: 'ACCEPT_JOB', id: job.id });
+              router.replace('/(tabs)/active');
+            }}
           >
-            <Text style={styles.primaryButtonText}>Marquer termin\u00e9</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.cancelButton}
-            onPress={() => dispatch({ type: 'CANCEL_JOB', id: job.id })}
-          >
-            <Text style={styles.cancelText}>Annuler la mission</Text>
+            <Text style={styles.primaryButtonText}>Accepter</Text>
           </TouchableOpacity>
         </View>
-      </ScrollView>
 
-      <Modal visible={signatureOpen} animationType="slide" onRequestClose={() => setSignatureOpen(false)}>
-        <SafeAreaView style={styles.signatureContainer}>
-          <View style={styles.signatureHeader}>
-            <Text style={styles.signatureTitle}>Signature du client</Text>
-            <TouchableOpacity onPress={() => setSignatureOpen(false)}>
-              <Ionicons name="close" size={20} color={DriverColors.text} />
-            </TouchableOpacity>
-          </View>
-          <SignatureScreen
-            onOK={(sig) => {
-              setSignature(sig);
-              setSignatureOpen(false);
-            }}
-            onEmpty={() => setSignatureOpen(false)}
-            autoClear
-            webStyle={`.m-signature-pad--footer {display: none;}`}
-          />
-        </SafeAreaView>
-      </Modal>
+        <TouchableOpacity style={styles.navInline} onPress={openExternalMaps}>
+          <Ionicons name="navigate" size={16} color={DriverColors.primary} />
+          <Text style={styles.navInlineText}>Navigateur</Text>
+        </TouchableOpacity>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -214,177 +253,169 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: DriverColors.background,
   },
-  content: {
-    padding: DriverSpacing.lg,
-    paddingBottom: 140,
+  mapSection: {
+    height: 320,
   },
-  header: {
-    flexDirection: 'row',
+  map: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  mapFallback: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#E0F2FE',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: DriverSpacing.lg,
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 20,
+  },
+  mapFallbackTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: DriverColors.text,
+    textAlign: 'center',
+  },
+  mapFallbackText: {
+    fontSize: 11,
+    color: DriverColors.muted,
+    textAlign: 'center',
   },
   backButton: {
+    position: 'absolute',
+    top: 14,
+    left: 14,
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: DriverColors.surface,
-    borderWidth: 1,
-    borderColor: DriverColors.border,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 6,
   },
-  title: {
-    ...DriverTypography.title,
+  sheet: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: DriverSpacing.lg,
+    paddingBottom: 140,
+    borderTopLeftRadius: DriverRadius.xl,
+    borderTopRightRadius: DriverRadius.xl,
+    marginTop: -20,
+    paddingTop: 16,
   },
-  subtitle: {
-    fontSize: 13,
-    color: DriverColors.muted,
-    marginTop: 4,
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#E5E7EB',
+    alignSelf: 'center',
+    marginBottom: DriverSpacing.md,
   },
-  card: {
-    backgroundColor: DriverColors.surface,
+  clientCard: {
+    backgroundColor: '#F9FAFB',
     borderRadius: DriverRadius.lg,
     padding: DriverSpacing.md,
     borderWidth: 1,
     borderColor: DriverColors.border,
-    marginBottom: DriverSpacing.lg,
+    marginBottom: DriverSpacing.md,
   },
-  cardHeader: {
+  clientRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    gap: 12,
+    marginBottom: DriverSpacing.sm,
   },
-  cardTitle: {
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: DriverColors.muted,
+  },
+  clientInfo: {
+    flex: 1,
+  },
+  clientName: {
     fontSize: 16,
     fontWeight: '700',
     color: DriverColors.text,
   },
-  cardPrice: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: DriverColors.primary,
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
   },
-  cardMeta: {
+  ratingText: {
     fontSize: 12,
     color: DriverColors.muted,
-    marginBottom: 10,
   },
-  cardRow: {
+  infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     marginBottom: 6,
   },
-  cardText: {
+  infoText: {
     flex: 1,
     fontSize: 12,
-    color: DriverColors.muted,
-  },
-  timelineCard: {
-    backgroundColor: DriverColors.surface,
-    borderRadius: DriverRadius.lg,
-    padding: DriverSpacing.md,
-    borderWidth: 1,
-    borderColor: DriverColors.border,
-    marginBottom: DriverSpacing.lg,
-  },
-  timelineRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginTop: 8,
-  },
-  timelineDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#CBD5F5',
-  },
-  timelineDotActive: {
-    backgroundColor: DriverColors.primary,
-  },
-  timelineText: {
-    fontSize: 12,
-    color: DriverColors.muted,
-  },
-  timelineTextActive: {
     color: DriverColors.text,
-    fontWeight: '600',
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: DriverSpacing.sm,
-  },
-  sectionTitle: {
-    ...DriverTypography.section,
-  },
-  sectionMeta: {
+  metaText: {
     fontSize: 12,
     color: DriverColors.muted,
+    marginBottom: 6,
   },
-  actionGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: DriverSpacing.lg,
+  priceRow: {
+    marginTop: 6,
+    gap: 4,
   },
-  actionTile: {
-    flexBasis: '48%',
-    backgroundColor: DriverColors.surface,
-    borderRadius: DriverRadius.md,
-    padding: DriverSpacing.md,
-    borderWidth: 1,
-    borderColor: DriverColors.border,
-    gap: 6,
-  },
-  actionTileActive: {
-    backgroundColor: DriverColors.primary,
-    borderColor: DriverColors.primary,
-  },
-  actionLabel: {
-    fontSize: 12,
+  priceValue: {
+    fontSize: 14,
     fontWeight: '700',
     color: DriverColors.text,
   },
-  actionLabelActive: {
-    color: '#FFFFFF',
-  },
-  actionSub: {
+  priceMeta: {
     fontSize: 11,
     color: DriverColors.muted,
   },
-  preview: {
-    width: '100%',
-    height: 90,
-    borderRadius: 12,
-    marginTop: 8,
-  },
-  ratingCard: {
-    backgroundColor: DriverColors.surface,
-    borderRadius: DriverRadius.lg,
-    padding: DriverSpacing.md,
-    borderWidth: 1,
-    borderColor: DriverColors.border,
+  tagRow: {
+    flexDirection: 'row',
+    gap: 12,
     marginBottom: DriverSpacing.lg,
   },
-  ratingRow: {
+  tagCard: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+    borderRadius: DriverRadius.md,
+    borderWidth: 1,
+    borderColor: DriverColors.border,
+    paddingVertical: 12,
+    alignItems: 'center',
+    gap: 6,
+  },
+  tagText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: DriverColors.text,
+  },
+  tagImage: {
+    width: 28,
+    height: 28,
+    resizeMode: 'contain',
+  },
+  actionRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 6,
-  },
-  ratingHint: {
-    fontSize: 11,
-    color: DriverColors.muted,
-    marginTop: 8,
-  },
-  footer: {
     gap: 12,
   },
   primaryButton: {
+    flex: 1,
     backgroundColor: DriverColors.primary,
     paddingVertical: 14,
     borderRadius: 999,
@@ -395,18 +426,29 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
-  cancelButton: {
-    paddingVertical: 12,
+  secondaryButton: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    paddingVertical: 14,
     borderRadius: 999,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#FEE2E2',
-    backgroundColor: '#FFF5F5',
   },
-  cancelText: {
-    fontSize: 12,
+  secondaryButtonText: {
+    fontSize: 14,
     fontWeight: '700',
     color: DriverColors.danger,
+  },
+  navInline: {
+    marginTop: DriverSpacing.md,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+  },
+  navInlineText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: DriverColors.primary,
   },
   emptyWrap: {
     flex: 1,
@@ -416,23 +458,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   emptyTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: DriverColors.text,
-  },
-  signatureContainer: {
-    flex: 1,
-    backgroundColor: DriverColors.background,
-  },
-  signatureHeader: {
-    padding: DriverSpacing.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: DriverColors.border,
-  },
-  signatureTitle: {
     fontSize: 16,
     fontWeight: '700',
     color: DriverColors.text,

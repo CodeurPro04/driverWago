@@ -30,15 +30,15 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.profileInfo}>
             <Text style={styles.profileName}>{state.driverName} K.</Text>
-            <Text style={styles.profileMeta}>Livreur ZIWAGO \u2022 4.9 \u2605</Text>
+            <Text style={styles.profileMeta}>Livreur ZIWAGO</Text>
             <View style={styles.profileTags}>
               <View style={styles.tag}>
                 <Ionicons name="checkmark-circle" size={12} color={DriverColors.success} />
-                <Text style={styles.tagText}>Compte v\u00e9rifi\u00e9</Text>
+                <Text style={styles.tagText}>Compte verifier</Text>
               </View>
               <View style={styles.tag}>
                 <Ionicons name="shield-checkmark" size={12} color={DriverColors.primary} />
-                <Text style={styles.tagText}>Assur\u00e9</Text>
+                <Text style={styles.tagText}>Assuré</Text>
               </View>
             </View>
           </View>
@@ -60,7 +60,7 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Mes param\u00e8tres</Text>
+          <Text style={styles.sectionTitle}>Mes paramètres</Text>
           <Text style={styles.sectionMeta}>A jour</Text>
         </View>
 
@@ -79,22 +79,22 @@ export default function ProfileScreen() {
         ))}
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Disponibilit\u00e9</Text>
+          <Text style={styles.sectionTitle}>Disponibilité</Text>
           <Text style={styles.sectionMeta}>{state.availability ? 'En ligne' : 'Hors ligne'}</Text>
         </View>
 
         <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>Horaires sugg\u00e9r\u00e9s</Text>
+          <Text style={styles.infoTitle}>Horaires suggérés</Text>
           <Text style={styles.infoText}>
-            Lundi - Vendredi \u2022 08:00 - 20:00
+            Lundi - Vendredi | 08:00 - 20:00
           </Text>
           <Text style={styles.infoText}>
-            Samedi \u2022 09:00 - 18:00
+            Samedi | 09:00 - 18:00
           </Text>
         </View>
 
         <TouchableOpacity style={styles.logoutButton}>
-          <Text style={styles.logoutText}>Se d\u00e9connecter</Text>
+          <Text style={styles.logoutText}>Se déconnecter</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>

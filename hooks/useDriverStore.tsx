@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useMemo, useReducer } from 'react';
+﻿import React, { createContext, useContext, useEffect, useMemo, useReducer, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type JobStatus =
   | 'pending'
@@ -34,6 +35,11 @@ interface DriverState {
   jobs: DriverJob[];
   activeJobId: string | null;
   cashoutBalance: number;
+  onboardingDone: boolean;
+  accountStep: number;
+  beforePhotos: string[];
+  afterPhotos: string[];
+  documents: Record<string, string | null>;
 }
 
 type DriverAction =
@@ -43,7 +49,15 @@ type DriverAction =
   | { type: 'ARRIVE_JOB'; id: string }
   | { type: 'START_WASH'; id: string }
   | { type: 'COMPLETE_JOB'; id: string }
-  | { type: 'CANCEL_JOB'; id: string };
+  | { type: 'CANCEL_JOB'; id: string }
+  | { type: 'SET_ONBOARDING_DONE'; value: boolean }
+  | { type: 'SET_ACCOUNT_STEP'; value: number }
+  | { type: 'SET_DOCUMENT'; id: string; uri: string | null }
+  | { type: 'SET_BEFORE_PHOTO'; index: number; uri: string }
+  | { type: 'SET_AFTER_PHOTO'; index: number; uri: string }
+  | { type: 'HYDRATE'; value: Partial<DriverState> };
+
+const STORAGE_KEY = 'ZIWAGO_DRIVER_STATE_V1';
 
 const nowLabel = () => {
   const now = new Date();
@@ -65,7 +79,7 @@ const initialJobs: DriverJob[] = [
     etaMin: 12,
     price: 5500,
     scheduledAt: nowLabel(),
-    notes: 'Parking int\u00e9rieur, portail blanc.',
+    notes: 'Parking intérieur, portail blanc.',
     status: 'enRoute',
     createdAt: nowLabel(),
     phone: '+225 07 12 34 56 78',
@@ -73,7 +87,7 @@ const initialJobs: DriverJob[] = [
   {
     id: 'job-1002',
     customerName: 'Mariam B.',
-    service: 'Ext\u00e9rieur uniquement',
+    service: 'Extérieur uniquement',
     vehicle: 'Berline - Peugeot 301',
     address: 'Cocody Angre 8e Tranche',
     latitude: 5.3591,
@@ -89,7 +103,7 @@ const initialJobs: DriverJob[] = [
   {
     id: 'job-1003',
     customerName: 'Ghislain Y.',
-    service: 'Int\u00e9rieur uniquement',
+    service: 'Intérieur uniquement',
     vehicle: 'Compacte - Kia Picanto',
     address: 'Plateau, Tour BNI',
     latitude: 5.3267,
@@ -127,6 +141,17 @@ const initialState: DriverState = {
   jobs: initialJobs,
   activeJobId: 'job-1001',
   cashoutBalance: 18500,
+  onboardingDone: false,
+  accountStep: 0,
+  beforePhotos: [],
+  afterPhotos: [],
+  documents: {
+    id: null,
+    profile: null,
+    license: null,
+    address: null,
+    certificate: null,
+  },
 };
 
 const updateJob = (jobs: DriverJob[], id: string, patch: Partial<DriverJob>) =>
@@ -138,7 +163,7 @@ const driverReducer = (state: DriverState, action: DriverAction): DriverState =>
       return { ...state, availability: !state.availability };
     case 'ACCEPT_JOB': {
       const jobs = updateJob(state.jobs, action.id, { status: 'enRoute' });
-      return { ...state, jobs, activeJobId: action.id };
+      return { ...state, jobs, activeJobId: action.id, beforePhotos: [], afterPhotos: [] };
     }
     case 'DECLINE_JOB': {
       const jobs = updateJob(state.jobs, action.id, { status: 'cancelled' });
@@ -160,12 +185,35 @@ const driverReducer = (state: DriverState, action: DriverAction): DriverState =>
         jobs,
         activeJobId: null,
         cashoutBalance: state.cashoutBalance + (target?.price ?? 0),
+        beforePhotos: [],
+        afterPhotos: [],
       };
     }
     case 'CANCEL_JOB': {
       const jobs = updateJob(state.jobs, action.id, { status: 'cancelled' });
-      return { ...state, jobs, activeJobId: null };
+      return { ...state, jobs, activeJobId: null, beforePhotos: [], afterPhotos: [] };
     }
+    case 'SET_ONBOARDING_DONE':
+      return { ...state, onboardingDone: action.value };
+    case 'SET_ACCOUNT_STEP':
+      return { ...state, accountStep: action.value };
+    case 'SET_DOCUMENT':
+      return {
+        ...state,
+        documents: { ...state.documents, [action.id]: action.uri },
+      };
+    case 'SET_BEFORE_PHOTO': {
+      const next = [...state.beforePhotos];
+      next[action.index] = action.uri;
+      return { ...state, beforePhotos: next };
+    }
+    case 'SET_AFTER_PHOTO': {
+      const next = [...state.afterPhotos];
+      next[action.index] = action.uri;
+      return { ...state, afterPhotos: next };
+    }
+    case 'HYDRATE':
+      return { ...state, ...action.value };
     default:
       return state;
   }
@@ -174,11 +222,43 @@ const driverReducer = (state: DriverState, action: DriverAction): DriverState =>
 const DriverContext = createContext<{
   state: DriverState;
   dispatch: React.Dispatch<DriverAction>;
+  hydrated: boolean;
 } | null>(null);
 
 export const DriverProvider = ({ children }: { children: React.ReactNode }) => {
   const [state, dispatch] = useReducer(driverReducer, initialState);
-  const value = useMemo(() => ({ state, dispatch }), [state]);
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored) as Partial<DriverState>;
+          dispatch({ type: 'HYDRATE', value: parsed });
+        }
+      } catch (error) {
+        // ignore storage errors
+      } finally {
+        setHydrated(true);
+      }
+    };
+    load();
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const persist = async () => {
+      try {
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch (error) {
+        // ignore storage errors
+      }
+    };
+    persist();
+  }, [state, hydrated]);
+
+  const value = useMemo(() => ({ state, dispatch, hydrated }), [state, hydrated]);
   return <DriverContext.Provider value={value}>{children}</DriverContext.Provider>;
 };
 
