@@ -1,46 +1,149 @@
-import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing, DriverTypography } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
-
-const SETTINGS = [
-  { id: 'docs', label: 'Documents', icon: 'document-text' },
-  { id: 'vehicle', label: 'V\u00e9hicule', icon: 'car' },
-  { id: 'zones', label: 'Zones de service', icon: 'map' },
-  { id: 'support', label: 'Support', icon: 'headset' },
-];
+import { getUserProfile, updateUserProfile, uploadUserAvatar } from '@/lib/api';
+import * as ImagePicker from 'expo-image-picker';
 
 export default function ProfileScreen() {
-  const { state } = useDriverStore();
+  const router = useRouter();
+  const { state, dispatch } = useDriverStore();
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState('');
+  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', phone: '', bio: '' });
+
+  const loadProfile = useCallback(async () => {
+    if (!state.driverId) return;
+    setLoading(true);
+    try {
+      const profile = await getUserProfile(state.driverId);
+      setForm({
+        firstName: profile.user.first_name || '',
+        lastName: profile.user.last_name || '',
+        email: profile.user.email || '',
+        phone: profile.user.phone || '',
+        bio: profile.user.bio || '',
+      });
+      setAvatarUrl(profile.user.avatar_url || '');
+      dispatch({ type: 'SET_DRIVER_NAME', value: profile.user.first_name || profile.user.name || 'Laveur' });
+      dispatch({ type: 'SET_PROFILE_STATUS', value: (profile.user.profile_status || 'pending') as any });
+      dispatch({ type: 'SET_DOCUMENTS', value: (profile.user.documents as Record<string, string | null>) || {} });
+      dispatch({ type: 'SET_DOCUMENTS_STATUS', value: (profile.user.documents_status || 'pending') as any });
+    } catch {
+      Alert.alert('Erreur', 'Impossible de charger le profil driver.');
+    } finally {
+      setLoading(false);
+    }
+  }, [dispatch, state.driverId]);
+
+  useEffect(() => {
+    loadProfile().catch(() => undefined);
+  }, [loadProfile]);
+
+  const onSave = async () => {
+    if (!state.driverId) return;
+    setSaving(true);
+    try {
+      const updated = await updateUserProfile(state.driverId, {
+        first_name: form.firstName,
+        last_name: form.lastName,
+        email: form.email,
+        phone: form.phone,
+        bio: form.bio,
+        is_available: state.availability,
+      });
+      dispatch({ type: 'SET_DRIVER_NAME', value: updated.user.first_name || updated.user.name || 'Laveur' });
+      Alert.alert('Succes', 'Profil mis a jour.');
+    } catch {
+      Alert.alert('Erreur', 'Impossible de sauvegarder le profil.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const completedJobs = state.jobs.filter((job) => job.status === 'completed');
+  const profileStatusLabel = state.profileStatus === 'approved'
+    ? 'Valide'
+    : state.profileStatus === 'rejected'
+      ? 'Rejete'
+      : 'En attente';
+  const documentsStatusLabel = state.documentsStatus === 'approved'
+    ? 'Documents valides'
+    : state.documentsStatus === 'submitted'
+      ? 'Documents soumis'
+      : state.documentsStatus === 'rejected'
+        ? 'Documents rejetes'
+        : 'Documents en attente';
+  const documentEntries = Object.entries(state.documents || {});
+  const documentLabels: Record<string, string> = {
+    id: 'Piece d identite',
+    profile: 'Photo de profil',
+    license: 'Permis de conduire',
+    address: 'Justificatif de domicile',
+    certificate: 'Certificat de bonne conduite',
+  };
+
+  const onPickAvatar = async () => {
+    if (!state.driverId) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permission.status !== 'granted') return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.8,
+    });
+    if (result.canceled) return;
+    try {
+      const uploaded = await uploadUserAvatar(state.driverId, result.assets[0].uri);
+      setAvatarUrl(uploaded.user.avatar_url || '');
+    } catch {
+      Alert.alert('Erreur', 'Upload avatar impossible.');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Text style={styles.title}>Profil</Text>
-          <TouchableOpacity style={styles.headerIcon}>
-            <Ionicons name="settings" size={18} color={DriverColors.primary} />
+          <Text style={styles.title}>Profil Driver</Text>
+          <TouchableOpacity style={styles.headerIcon} onPress={() => loadProfile().catch(() => undefined)}>
+            <Ionicons name="refresh" size={18} color={DriverColors.primary} />
           </TouchableOpacity>
         </View>
 
         <View style={styles.profileCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{state.driverName.charAt(0)}</Text>
-          </View>
+          <TouchableOpacity style={styles.avatar} onPress={onPickAvatar}>
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+            ) : (
+              <Text style={styles.avatarText}>{(form.firstName || state.driverName || 'L').charAt(0).toUpperCase()}</Text>
+            )}
+          </TouchableOpacity>
           <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>{state.driverName} K.</Text>
-            <Text style={styles.profileMeta}>Livreur ZIWAGO</Text>
-            <View style={styles.profileTags}>
-              <View style={styles.tag}>
-                <Ionicons name="checkmark-circle" size={12} color={DriverColors.success} />
-                <Text style={styles.tagText}>Compte verifier</Text>
-              </View>
-              <View style={styles.tag}>
-                <Ionicons name="shield-checkmark" size={12} color={DriverColors.primary} />
-                <Text style={styles.tagText}>Assuré</Text>
-              </View>
-            </View>
+            <Text style={styles.profileName}>{`${form.firstName} ${form.lastName}`.trim() || state.driverName}</Text>
+            <Text style={styles.profileMeta}>Statut: {profileStatusLabel}</Text>
+            <Text style={styles.profileMeta}>Disponibilite: {state.availability ? 'En ligne' : 'Hors ligne'}</Text>
+          </View>
+        </View>
+
+        <View style={styles.formCard}>
+          <Text style={styles.sectionTitle}>Informations</Text>
+          <TextInput style={styles.input} placeholder="Prenom" value={form.firstName} onChangeText={(v) => setForm((p) => ({ ...p, firstName: v }))} />
+          <TextInput style={styles.input} placeholder="Nom" value={form.lastName} onChangeText={(v) => setForm((p) => ({ ...p, lastName: v }))} />
+          <TextInput style={styles.input} placeholder="Telephone" value={form.phone} keyboardType="phone-pad" onChangeText={(v) => setForm((p) => ({ ...p, phone: v }))} />
+          <TextInput style={styles.input} placeholder="Email" value={form.email} onChangeText={(v) => setForm((p) => ({ ...p, email: v }))} />
+          <TextInput style={styles.bioInput} placeholder="Bio" value={form.bio} multiline onChangeText={(v) => setForm((p) => ({ ...p, bio: v }))} />
+
+          <View style={styles.actionRow}>
+            <TouchableOpacity style={styles.availabilityBtn} onPress={() => dispatch({ type: 'TOGGLE_AVAILABILITY' })}>
+              <Text style={styles.availabilityText}>{state.availability ? 'Passer hors ligne' : 'Passer en ligne'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.saveBtn} onPress={onSave} disabled={saving || loading}>
+              {saving || loading ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={styles.saveText}>Enregistrer</Text>}
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -59,66 +162,63 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Mes paramètres</Text>
-          <Text style={styles.sectionMeta}>A jour</Text>
+        <View style={styles.formCard}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Documents</Text>
+            <TouchableOpacity onPress={() => router.push('/account/documents')}>
+              <Text style={styles.linkText}>Gerer</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.profileMeta}>{documentsStatusLabel}</Text>
+          <View style={styles.documentsList}>
+            {documentEntries.length === 0 ? (
+              <Text style={styles.emptyListText}>Aucun document enregistre.</Text>
+            ) : (
+              documentEntries.map(([key, value]) => (
+                <View key={key} style={styles.docRow}>
+                  <Text style={styles.docLabel}>{documentLabels[key] || key}</Text>
+                  <Text style={[styles.docValue, value ? styles.docUploaded : styles.docMissing]}>
+                    {value ? 'Televerse' : 'Manquant'}
+                  </Text>
+                </View>
+              ))
+            )}
+          </View>
         </View>
 
-        {SETTINGS.map((item) => (
-          <TouchableOpacity key={item.id} style={styles.settingRow}>
-            <View style={styles.settingIcon}>
-              <Ionicons
-                name={item.icon as keyof typeof Ionicons.glyphMap}
-                size={16}
-                color={DriverColors.primary}
-              />
-            </View>
-            <Text style={styles.settingLabel}>{item.label}</Text>
-            <Ionicons name="chevron-forward" size={16} color={DriverColors.muted} />
-          </TouchableOpacity>
-        ))}
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Disponibilité</Text>
-          <Text style={styles.sectionMeta}>{state.availability ? 'En ligne' : 'Hors ligne'}</Text>
+        <View style={styles.formCard}>
+          <Text style={styles.sectionTitle}>Commandes effectuees</Text>
+          {completedJobs.length === 0 ? (
+            <Text style={styles.emptyListText}>Aucune mission terminee pour le moment.</Text>
+          ) : (
+            completedJobs.map((job) => (
+              <TouchableOpacity
+                key={job.id}
+                style={styles.orderCard}
+                onPress={() => router.push({ pathname: '/job-details', params: { id: job.id } })}
+              >
+                <View>
+                  <Text style={styles.orderTitle}>{job.customerName}</Text>
+                  <Text style={styles.orderMeta}>{job.service} • {job.vehicle}</Text>
+                </View>
+                <View style={styles.orderRight}>
+                  <Text style={styles.orderPrice}>{job.price.toLocaleString()} F CFA</Text>
+                  <Text style={styles.orderDate}>{job.scheduledAt}</Text>
+                </View>
+              </TouchableOpacity>
+            ))
+          )}
         </View>
-
-        <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>Horaires suggérés</Text>
-          <Text style={styles.infoText}>
-            Lundi - Vendredi | 08:00 - 20:00
-          </Text>
-          <Text style={styles.infoText}>
-            Samedi | 09:00 - 18:00
-          </Text>
-        </View>
-
-        <TouchableOpacity style={styles.logoutButton}>
-          <Text style={styles.logoutText}>Se déconnecter</Text>
-        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: DriverColors.background,
-  },
-  content: {
-    padding: DriverSpacing.lg,
-    paddingBottom: 120,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: DriverSpacing.lg,
-  },
-  title: {
-    ...DriverTypography.title,
-  },
+  container: { flex: 1, backgroundColor: DriverColors.background },
+  content: { padding: DriverSpacing.lg, paddingBottom: 120 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: DriverSpacing.lg },
+  title: { ...DriverTypography.title },
   headerIcon: {
     width: 40,
     height: 40,
@@ -138,142 +238,54 @@ const styles = StyleSheet.create({
     padding: DriverSpacing.md,
     borderWidth: 1,
     borderColor: DriverColors.border,
-    marginBottom: DriverSpacing.lg,
+    marginBottom: DriverSpacing.md,
   },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: DriverColors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  profileInfo: {
-    flex: 1,
-  },
-  profileName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: DriverColors.text,
-  },
-  profileMeta: {
-    fontSize: 12,
-    color: DriverColors.muted,
-    marginTop: 4,
-  },
-  profileTags: {
-    flexDirection: 'row',
-    gap: 6,
-    marginTop: 8,
-  },
-  tag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: DriverColors.chip,
-  },
-  tagText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: DriverColors.primary,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: DriverSpacing.sm,
-    marginBottom: DriverSpacing.lg,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: DriverColors.surface,
-    borderRadius: DriverRadius.md,
-    padding: DriverSpacing.md,
-    borderWidth: 1,
-    borderColor: DriverColors.border,
-    alignItems: 'center',
-    gap: 4,
-  },
-  statValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: DriverColors.text,
-  },
-  statLabel: {
-    fontSize: 11,
-    color: DriverColors.muted,
-  },
-  sectionHeader: {
+  avatar: { width: 56, height: 56, borderRadius: 28, backgroundColor: DriverColors.primary, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarImage: { width: '100%', height: '100%' },
+  avatarText: { color: '#FFF', fontSize: 20, fontWeight: '700' },
+  profileInfo: { flex: 1 },
+  profileName: { fontSize: 18, fontWeight: '700', color: DriverColors.text },
+  profileMeta: { fontSize: 12, color: DriverColors.muted, marginTop: 3 },
+  formCard: { backgroundColor: DriverColors.surface, borderRadius: DriverRadius.md, borderWidth: 1, borderColor: DriverColors.border, padding: DriverSpacing.md, marginBottom: DriverSpacing.md },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: DriverColors.text, marginBottom: 8 },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  linkText: { fontSize: 12, color: DriverColors.primary, fontWeight: '700' },
+  input: { height: 44, borderRadius: DriverRadius.md, backgroundColor: '#F3F4F6', paddingHorizontal: 12, color: DriverColors.text, marginBottom: 10 },
+  bioInput: { minHeight: 80, borderRadius: DriverRadius.md, backgroundColor: '#F3F4F6', paddingHorizontal: 12, paddingVertical: 10, textAlignVertical: 'top', color: DriverColors.text, marginBottom: 10 },
+  actionRow: { flexDirection: 'row', gap: 10 },
+  availabilityBtn: { flex: 1, borderRadius: 999, borderWidth: 1, borderColor: DriverColors.border, backgroundColor: '#FFFFFF', paddingVertical: 12, alignItems: 'center' },
+  availabilityText: { fontSize: 12, fontWeight: '700', color: DriverColors.primary },
+  saveBtn: { flex: 1, borderRadius: 999, backgroundColor: DriverColors.primary, paddingVertical: 12, alignItems: 'center' },
+  saveText: { fontSize: 12, fontWeight: '700', color: '#FFF' },
+  statsRow: { flexDirection: 'row', gap: DriverSpacing.sm },
+  statCard: { flex: 1, backgroundColor: DriverColors.surface, borderRadius: DriverRadius.md, padding: DriverSpacing.md, borderWidth: 1, borderColor: DriverColors.border, alignItems: 'center', gap: 4 },
+  statValue: { fontSize: 16, fontWeight: '700', color: DriverColors.text },
+  statLabel: { fontSize: 11, color: DriverColors.muted },
+  documentsList: { gap: 8, marginTop: 10 },
+  docRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: DriverSpacing.sm,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: DriverColors.border,
   },
-  sectionTitle: {
-    ...DriverTypography.section,
-  },
-  sectionMeta: {
-    fontSize: 12,
-    color: DriverColors.muted,
-  },
-  settingRow: {
+  docLabel: { fontSize: 12, color: DriverColors.text, fontWeight: '600' },
+  docValue: { fontSize: 11, fontWeight: '700' },
+  docUploaded: { color: DriverColors.success },
+  docMissing: { color: DriverColors.danger },
+  emptyListText: { fontSize: 12, color: DriverColors.muted },
+  orderCard: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 12,
-    padding: DriverSpacing.md,
-    borderRadius: DriverRadius.md,
-    backgroundColor: DriverColors.surface,
-    borderWidth: 1,
-    borderColor: DriverColors.border,
-    marginBottom: DriverSpacing.sm,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: DriverColors.border,
   },
-  settingIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#EEF2FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  settingLabel: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '600',
-    color: DriverColors.text,
-  },
-  infoCard: {
-    backgroundColor: DriverColors.surface,
-    borderRadius: DriverRadius.md,
-    padding: DriverSpacing.md,
-    borderWidth: 1,
-    borderColor: DriverColors.border,
-    marginBottom: DriverSpacing.lg,
-  },
-  infoTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: DriverColors.text,
-  },
-  infoText: {
-    fontSize: 12,
-    color: DriverColors.muted,
-    marginTop: 6,
-  },
-  logoutButton: {
-    paddingVertical: 14,
-    borderRadius: 999,
-    backgroundColor: '#FEE2E2',
-    alignItems: 'center',
-  },
-  logoutText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: DriverColors.danger,
-  },
+  orderTitle: { fontSize: 13, fontWeight: '700', color: DriverColors.text },
+  orderMeta: { fontSize: 11, color: DriverColors.muted, marginTop: 2 },
+  orderRight: { alignItems: 'flex-end' },
+  orderPrice: { fontSize: 12, fontWeight: '700', color: DriverColors.text },
+  orderDate: { fontSize: 11, color: DriverColors.muted, marginTop: 2 },
 });

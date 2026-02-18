@@ -1,28 +1,46 @@
-﻿import React, { useRef, useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, Image, TouchableOpacity, FlatList, Dimensions } from 'react-native';
+import React, { useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  SafeAreaView,
+  Image,
+  TouchableOpacity,
+  FlatList,
+  Dimensions,
+  ImageSourcePropType,
+} from 'react-native';
 import { useRouter } from 'expo-router';
-import { DriverColors, DriverRadius, DriverSpacing } from '@/constants/driverTheme';
+import { DriverColors, DriverSpacing } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
 
-const slides = [
+type Slide = {
+  id: string;
+  title: string;
+  image: ImageSourcePropType;
+  primary: string;
+  secondary: string | null;
+};
+
+const slides: Slide[] = [
   {
     id: 'onb-1',
     title: 'Comment souhaitez-vous utiliser Ziwago ?',
     image: require('@/assets/images/Sale-pana1.png'),
-    //primary: 'Je veux réserver un lavage de voiture',
+    primary: 'Continuer',
     secondary: 'Je veux travailler comme laveur',
   },
   {
     id: 'onb-2',
-    title: 'Lavez des voitures à tout moment, n’importe où.',
+    title: 'Lavez des voitures a tout moment, n importe ou.',
     image: require('@/assets/images/wash-pana1.png'),
     primary: 'Continuer',
-    //secondary: 'Passer',
+    secondary: null,
   },
   {
     id: 'onb-3',
     title: 'Recevez, suivez et gagnez. Le tout dans une seule application.',
-    image: require('@/assets/images/City1.svg'),
+    image: require('@/assets/images/management-pana1.png'),
     primary: 'Commencer',
     secondary: null,
   },
@@ -33,7 +51,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 export default function OnboardingScreen() {
   const router = useRouter();
   const { dispatch } = useDriverStore();
-  const listRef = useRef<FlatList>(null);
+  const listRef = useRef<FlatList<Slide>>(null);
   const [index, setIndex] = useState(0);
 
   const handleAdvance = () => {
@@ -51,6 +69,7 @@ export default function OnboardingScreen() {
       router.replace('/account/phone');
       return;
     }
+
     if (index === 1) {
       listRef.current?.scrollToIndex({ index: 2, animated: true });
     }
@@ -73,20 +92,20 @@ export default function OnboardingScreen() {
           <View style={styles.slide}>
             <Text style={styles.logo}>ZIWAGO</Text>
             <Image source={item.image} style={styles.hero} resizeMode="contain" />
+
             <View style={styles.pagination}>
               {slides.map((dot, dotIndex) => (
-                <View
-                  key={dot.id}
-                  style={[styles.dot, dotIndex === index && styles.dotActive]}
-                />
+                <View key={dot.id} style={[styles.dot, dotIndex === index && styles.dotActive]} />
               ))}
             </View>
+
             <Text style={styles.title}>{item.title}</Text>
 
             <View style={styles.actions}>
               <TouchableOpacity style={styles.primaryButton} onPress={handleAdvance}>
                 <Text style={styles.primaryText}>{item.primary}</Text>
               </TouchableOpacity>
+
               {item.secondary ? (
                 <TouchableOpacity style={styles.secondaryButton} onPress={handleSecondary}>
                   <Text style={styles.secondaryText}>{item.secondary}</Text>

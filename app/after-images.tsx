@@ -1,35 +1,84 @@
-ï»¿import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ScrollView, Image } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  SafeAreaView,
+  TouchableOpacity,
+  ScrollView,
+  Image,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
+import { transitionJob, uploadJobMedia } from '@/lib/api';
 
-const slots = [0, 1];
+const slots = [0, 1, 2, 3, 4];
 
 export default function AfterImagesScreen() {
   const router = useRouter();
-  const { state, dispatch } = useDriverStore();
-  const photos = state.afterPhotos || [];
+  const { state, dispatch, refreshJobsNow } = useDriverStore();
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
 
   const activeJob = useMemo(() => {
     if (!state.activeJobId) return null;
     return state.jobs.find((job) => job.id === state.activeJobId) || null;
   }, [state.activeJobId, state.jobs]);
 
+  const photos = useMemo(() => {
+    const local = state.afterPhotos || [];
+    const remote = activeJob?.afterPhotos || [];
+    return local.length >= remote.length ? local : remote;
+  }, [state.afterPhotos, activeJob?.afterPhotos]);
+
   const progress = useMemo(() => photos.filter(Boolean).length, [photos]);
 
   const pickImage = async (index: number) => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') return;
+
     const result = await ImagePicker.launchImageLibraryAsync({
       quality: 0.7,
       allowsEditing: true,
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
     });
-    if (!result.canceled) {
-      dispatch({ type: 'SET_AFTER_PHOTO', index, uri: result.assets[0].uri });
+
+    if (result.canceled) return;
+
+    dispatch({ type: 'SET_AFTER_PHOTO', index, uri: result.assets[0].uri });
+
+    if (activeJob && state.driverId) {
+      setUploadingCount((prev) => prev + 1);
+      uploadJobMedia(activeJob.id, state.driverId, 'after', result.assets[0].uri)
+        .then(async () => {
+          await refreshJobsNow(state.driverId || undefined);
+        })
+        .catch(() => {
+          Alert.alert('Erreur', "Impossible d enregistrer cette photo en base.");
+        })
+        .finally(() => {
+          setUploadingCount((prev) => Math.max(0, prev - 1));
+        });
+    }
+  };
+
+  const onCompleteJob = async () => {
+    if (progress < 5 || !activeJob || !state.driverId) return;
+
+    setSubmitting(true);
+    try {
+      await transitionJob(activeJob.id, state.driverId, 'complete');
+      await refreshJobsNow(state.driverId);
+      router.replace('/(tabs)');
+    } catch (error: any) {
+      Alert.alert('Transition impossible', error?.message || 'Les photos apres lavage ne sont pas encore enregistrees.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -37,7 +86,7 @@ export default function AfterImagesScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>
-          TÃ©lÃ©chargez des photos montrant la voiture aprÃ¨s le lavage pour terminer la commande
+          Téléchargez des photos montrant la voiture après le lavage pour terminer la commande
         </Text>
 
         <View style={styles.grid}>
@@ -56,25 +105,23 @@ export default function AfterImagesScreen() {
 
         <View style={styles.progressRow}>
           <View style={styles.progressBadge}>
-            <Text style={styles.progressText}>{Math.min(2, progress)}/2</Text>
+            <Text style={styles.progressText}>{Math.min(5, progress)}/5</Text>
           </View>
           <Text style={styles.progressHint}>
-            Ajoutez 2 photos claires montrant le vÃ©hicule nettoyÃ© aprÃ¨s le lavage.
+            Ajoutez 5 photos claires montrant le véhicule nettoyé après le lavage.
           </Text>
         </View>
 
         <TouchableOpacity
-          style={[styles.primaryButton, progress < 2 && styles.primaryButtonDisabled]}
-          disabled={progress < 2}
-          onPress={() => {
-            if (progress < 2) return;
-            if (activeJob) {
-              dispatch({ type: 'COMPLETE_JOB', id: activeJob.id });
-            }
-            router.replace('/(tabs)');
-          }}
+          style={[styles.primaryButton, (progress < 5 || uploadingCount > 0 || submitting) && styles.primaryButtonDisabled]}
+          disabled={progress < 5 || uploadingCount > 0 || submitting}
+          onPress={onCompleteJob}
         >
-          <Text style={styles.primaryText}>Soumettre la preuve et terminer la commande</Text>
+          {submitting ? (
+            <ActivityIndicator size="small" color="#FFF" />
+          ) : (
+            <Text style={styles.primaryText}>Soumettre la preuve et terminer la commande</Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -98,10 +145,11 @@ const styles = StyleSheet.create({
   },
   grid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
   },
   photoCard: {
-    flex: 1,
+    width: '48%',
     aspectRatio: 1,
     borderRadius: DriverRadius.md,
     borderWidth: 1,

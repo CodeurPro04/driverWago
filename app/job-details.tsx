@@ -1,9 +1,8 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Platform, Linking, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { requireNativeModule } from 'expo-modules-core';
-import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { requireNativeModule } from 'expo-modules-core';
 import { DriverColors, DriverRadius, DriverSpacing } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
 import BerlineSvg from "@/assets/svg/berline.svg";
@@ -70,30 +69,6 @@ export default function JobDetailsScreen() {
     }));
   }, [job]);
 
-  useEffect(() => {
-    let mounted = true;
-    const init = async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') return;
-        const location = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        if (!mounted) return;
-        setCamera((prev) => ({
-          ...prev,
-          coordinates: { latitude: location.coords.latitude, longitude: location.coords.longitude },
-        }));
-      } catch (error) {
-        // Keep fallback camera.
-      }
-    };
-    init();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
   const markers = useMemo(() => {
     if (!job) return [];
     return [
@@ -106,6 +81,7 @@ export default function JobDetailsScreen() {
       },
     ];
   }, [job]);
+  const canRespondToRequest = job?.status === 'pending';
 
   const openExternalMaps = () => {
     if (!job) return;
@@ -117,12 +93,12 @@ export default function JobDetailsScreen() {
   };
 
   let hasExpoMaps = true;
-  let MapView: any = null;
+  let MapViewComponent: any = null;
   try {
     requireNativeModule('ExpoMaps');
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const ExpoMaps = require('expo-maps');
-    MapView = Platform.OS === 'ios' ? ExpoMaps.AppleMaps.View : ExpoMaps.GoogleMaps.View;
+    MapViewComponent = Platform.OS === 'ios' ? ExpoMaps.AppleMaps.View : ExpoMaps.GoogleMaps.View;
   } catch (error) {
     hasExpoMaps = false;
   }
@@ -145,7 +121,7 @@ export default function JobDetailsScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.mapSection}>
         {hasExpoMaps ? (
-          <MapView
+          <MapViewComponent
             style={styles.map}
             cameraPosition={camera}
             markers={markers}
@@ -160,9 +136,9 @@ export default function JobDetailsScreen() {
         ) : (
           <View style={styles.mapFallback}>
             <Ionicons name="map" size={26} color={DriverColors.primary} />
-            <Text style={styles.mapFallbackTitle}>Carte indisponible (Expo Go)</Text>
+            <Text style={styles.mapFallbackTitle}>Carte indisponible sur ce build</Text>
             <Text style={styles.mapFallbackText}>
-              Installez un dev build pour activer la carte.
+              Ouvrez le navigateur pour voir l emplacement client.
             </Text>
           </View>
         )}
@@ -176,9 +152,13 @@ export default function JobDetailsScreen() {
 
         <View style={styles.clientCard}>
           <View style={styles.clientRow}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{job.customerName.charAt(0)}</Text>
-            </View>
+            {job.customerAvatarUrl ? (
+              <Image source={{ uri: job.customerAvatarUrl }} style={styles.avatarImage} />
+            ) : (
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{job.customerName.charAt(0)}</Text>
+              </View>
+            )}
             <View style={styles.clientInfo}>
               <Text style={styles.clientName}>{job.customerName}</Text>
               <View style={styles.ratingRow}>
@@ -207,7 +187,7 @@ export default function JobDetailsScreen() {
           </View>
         </View>
 
-          <View style={styles.tagRow}>
+        <View style={styles.tagRow}>
           <View style={styles.tagCard}>
             {renderIcon(VehicleIcon, 'car')}
             <Text style={styles.tagText}>{job.vehicle}</Text>
@@ -218,26 +198,64 @@ export default function JobDetailsScreen() {
           </View>
         </View>
 
-        <View style={styles.actionRow}>
-          <TouchableOpacity
-            style={styles.secondaryButton}
-            onPress={() => {
-              dispatch({ type: 'DECLINE_JOB', id: job.id });
-              router.back();
-            }}
-          >
-            <Text style={styles.secondaryButtonText}>Refuser</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={() => {
-              dispatch({ type: 'ACCEPT_JOB', id: job.id });
-              router.replace('/(tabs)/active');
-            }}
-          >
-            <Text style={styles.primaryButtonText}>Accepter</Text>
-          </TouchableOpacity>
+        <View style={styles.photosSection}>
+          <Text style={styles.photosTitle}>Photos de la commande</Text>
+          {job.beforePhotos?.length ? (
+            <View style={styles.photoGroup}>
+              <Text style={styles.photoGroupTitle}>Avant lavage</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photosRow}>
+                {job.beforePhotos.map((uri, index) => (
+                  <Image key={`before-${index}`} source={{ uri }} style={styles.photoItem} />
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
+          {job.afterPhotos?.length ? (
+            <View style={styles.photoGroup}>
+              <Text style={styles.photoGroupTitle}>Apres lavage</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photosRow}>
+                {job.afterPhotos.map((uri, index) => (
+                  <Image key={`after-${index}`} source={{ uri }} style={styles.photoItem} />
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
+          {!job.beforePhotos?.length && !job.afterPhotos?.length ? (
+            <Text style={styles.noPhotosText}>Aucune photo enregistree pour le moment.</Text>
+          ) : null}
         </View>
+
+        {canRespondToRequest ? (
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => {
+                dispatch({ type: 'DECLINE_JOB', id: job.id });
+                router.back();
+              }}
+            >
+              <Text style={styles.secondaryButtonText}>Refuser</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => {
+                dispatch({ type: 'ACCEPT_JOB', id: job.id });
+                router.replace('/(tabs)/active');
+              }}
+            >
+              <Text style={styles.primaryButtonText}>Accepter</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.statusInfo}>
+            <Ionicons name="checkmark-circle" size={16} color={DriverColors.primary} />
+            <Text style={styles.statusInfoText}>
+              {job.status === 'completed'
+                ? 'Mission terminee. Aucune action requise.'
+                : 'Cette mission n est plus en attente de reponse.'}
+            </Text>
+          </View>
+        )}
 
         <TouchableOpacity style={styles.navInline} onPress={openExternalMaps}>
           <Ionicons name="navigate" size={16} color={DriverColors.primary} />
@@ -332,6 +350,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#E5E7EB',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
   avatarText: {
     fontSize: 16,
@@ -449,6 +472,52 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: DriverColors.primary,
+  },
+  statusInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: DriverRadius.md,
+    borderWidth: 1,
+    borderColor: DriverColors.border,
+    backgroundColor: '#F8FAFC',
+  },
+  statusInfoText: {
+    flex: 1,
+    fontSize: 12,
+    color: DriverColors.muted,
+  },
+  photosSection: {
+    marginBottom: DriverSpacing.lg,
+    gap: 8,
+  },
+  photosTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: DriverColors.text,
+  },
+  photoGroup: {
+    gap: 6,
+  },
+  photoGroupTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: DriverColors.muted,
+  },
+  photosRow: {
+    gap: 10,
+    paddingBottom: 4,
+  },
+  photoItem: {
+    width: 120,
+    height: 96,
+    borderRadius: 10,
+    backgroundColor: '#E5E7EB',
+  },
+  noPhotosText: {
+    fontSize: 12,
+    color: DriverColors.muted,
   },
   emptyWrap: {
     flex: 1,

@@ -1,6 +1,5 @@
-﻿import { useEffect } from 'react';
-import { View } from 'react-native';
-import { useRouter } from 'expo-router';
+import React from 'react';
+import { Redirect, useRootNavigationState } from 'expo-router';
 import { useDriverStore } from '@/hooks/useDriverStore';
 
 const stepRoutes: Record<number, string> = {
@@ -12,27 +11,28 @@ const stepRoutes: Record<number, string> = {
   5: '/account/documents',
   6: '/account/review',
   7: '/account/review',
+  8: '/(tabs)',
 };
 
 export default function Index() {
-  const router = useRouter();
+  const rootNavigationState = useRootNavigationState();
   const { state, hydrated } = useDriverStore();
 
-  useEffect(() => {
-    if (!hydrated) return;
+  if (!rootNavigationState?.key || !hydrated) {
+    return null;
+  }
 
-    if (!state.onboardingDone) {
-      router.replace('/onboarding');
-      return;
-    }
+  if (!state.onboardingDone) {
+    return <Redirect href="/onboarding" />;
+  }
 
-    if (state.accountStep < 6) {
-      router.replace(stepRoutes[state.accountStep] || '/account/phone');
-      return;
-    }
+  if (state.accountStep < 6) {
+    return <Redirect href={(stepRoutes[state.accountStep] || '/account/phone') as any} />;
+  }
 
-    router.replace('/(tabs)');
-  }, [hydrated, state.onboardingDone, state.accountStep, router]);
+  if (state.profileStatus !== 'approved') {
+    return <Redirect href="/account/review" />;
+  }
 
-  return <View />;
+  return <Redirect href="/(tabs)" />;
 }

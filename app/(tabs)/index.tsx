@@ -6,6 +6,7 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +21,8 @@ export default function DashboardScreen() {
     () => state.jobs.filter((job) => job.status === 'pending'),
     [state.jobs]
   );
+  const canSeeAvailableJobs = state.availability && state.profileStatus === 'approved';
+  const visiblePendingJobs = canSeeAvailableJobs ? pendingJobs : [];
 
   const todayEarnings = useMemo(
     () => state.jobs.filter((job) => job.status === 'completed').reduce((sum, job) => sum + job.price, 0),
@@ -57,7 +60,7 @@ export default function DashboardScreen() {
           <Text style={styles.sectionTitle}>Aperçu du jour</Text>
           <View style={styles.overviewCard}>
             <View style={styles.overviewItem}>
-              <Text style={styles.overviewValue}>{pendingJobs.length}</Text>
+              <Text style={styles.overviewValue}>{visiblePendingJobs.length}</Text>
               <Text style={styles.overviewLabel}>Commandes</Text>
             </View>
             <View style={styles.overviewDivider} />
@@ -80,14 +83,25 @@ export default function DashboardScreen() {
               <Text style={styles.linkText}>Tout voir</Text>
             </TouchableOpacity>
           </View>
-          {pendingJobs.length === 0 ? (
+          {visiblePendingJobs.length === 0 ? (
             <View style={styles.emptyCard}>
-              <Ionicons name="sparkles" size={20} color={DriverColors.primary} />
-              <Text style={styles.emptyTitle}>Aucune demande pour l'instant</Text>
-              <Text style={styles.emptyText}>Restez en ligne pour recevoir des missions.</Text>
+              <Text style={styles.emptyTitle}>
+                {!state.availability
+                  ? 'Vous etes hors ligne'
+                  : state.profileStatus !== 'approved'
+                    ? 'Profil non valide'
+                    : "Aucune demande pour l'instant"}
+              </Text>
+              <Text style={styles.emptyText}>
+                {!state.availability
+                  ? 'Passez en ligne pour voir les demandes disponibles.'
+                  : state.profileStatus !== 'approved'
+                    ? 'Votre compte doit etre valide avant de recevoir des demandes.'
+                    : 'Restez en ligne pour recevoir des missions.'}
+              </Text>
             </View>
           ) : (
-            pendingJobs.map((job) => (
+            visiblePendingJobs.map((job) => (
               <TouchableOpacity
                 key={job.id}
                 style={styles.requestCard}
@@ -96,9 +110,13 @@ export default function DashboardScreen() {
               >
                 <View style={styles.requestHeader}>
                   <View style={styles.requestUser}>
-                    <View style={styles.avatar}>
-                      <Text style={styles.avatarText}>{job.customerName.charAt(0)}</Text>
-                    </View>
+                    {job.customerAvatarUrl ? (
+                      <Image source={{ uri: job.customerAvatarUrl }} style={styles.avatarImage} />
+                    ) : (
+                      <View style={styles.avatar}>
+                        <Text style={styles.avatarText}>{job.customerName.charAt(0)}</Text>
+                      </View>
+                    )}
                     <View>
                       <Text style={styles.requestName}>{job.customerName}</Text>
                       <View style={styles.ratingRow}>
@@ -278,6 +296,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#E5E7EB',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
   },
   avatarText: {
     fontSize: 14,

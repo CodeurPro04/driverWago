@@ -1,38 +1,50 @@
-import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TextInput, TouchableOpacity } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
 
 export default function DriverPhoneScreen() {
-  const { dispatch } = useDriverStore();
+  const { state, dispatch } = useDriverStore();
   const router = useRouter();
+  const [localPhone, setLocalPhone] = useState(state.driverPhone.replace('+225', ''));
+
+  const handleContinue = () => {
+    const digits = localPhone.replace(/\D/g, '');
+    if (digits.length < 8) {
+      Alert.alert('Numero invalide', 'Entrez un numero valide.');
+      return;
+    }
+
+    dispatch({ type: 'SET_DRIVER_PHONE', value: `+225${digits}` });
+    dispatch({ type: 'SET_ACCOUNT_STEP', value: 1 });
+    router.push('/account/otp');
+  };
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.title}>Entrez votre numéro de téléphone portable</Text>
+        <Text style={styles.title}>Entrez votre numero de telephone portable</Text>
 
         <View style={styles.inputRow}>
           <View style={styles.flagBox}>
-            <Text style={styles.flagText}>🇨🇮</Text>
+            <Text style={styles.flagText}>CI</Text>
           </View>
           <View style={styles.countryCode}>
             <Text style={styles.codeText}>+225</Text>
           </View>
           <TextInput
             style={styles.input}
-            placeholder="Votre numéro"
+            placeholder="Votre numero"
             placeholderTextColor={DriverColors.muted}
             keyboardType="phone-pad"
+            value={localPhone}
+            onChangeText={(text) => setLocalPhone(text.replace(/\D/g, '').slice(0, 10))}
           />
         </View>
 
-        <TouchableOpacity style={styles.primaryButton} onPress={() => {
-          dispatch({ type: 'SET_ACCOUNT_STEP', value: 1 });
-          router.push('/account/otp');
-        }}>
+        <TouchableOpacity style={styles.primaryButton} onPress={handleContinue}>
           <Text style={styles.primaryText}>Continuer</Text>
         </TouchableOpacity>
 
@@ -56,8 +68,7 @@ export default function DriverPhoneScreen() {
         </TouchableOpacity>
 
         <Text style={styles.legalText}>
-          En continuant, vous acceptez de recevoir des appels, des messages WhatsApp ou SMS de la part
-          de Ziwago concernant vos commandes et mises à jour. Vous pouvez vous désabonner à tout moment.
+          En continuant, vous acceptez de recevoir des appels et des messages de la part de Ziwago.
         </Text>
       </View>
     </SafeAreaView>
@@ -93,7 +104,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   flagText: {
-    fontSize: 18,
+    fontSize: 14,
+    fontWeight: '700',
   },
   countryCode: {
     paddingHorizontal: 14,

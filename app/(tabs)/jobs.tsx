@@ -1,5 +1,5 @@
 ﻿import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing, DriverTypography } from '@/constants/driverTheme';
@@ -22,12 +22,16 @@ export default function JobsScreen() {
     () => state.jobs.filter((job) => ['accepted', 'enRoute', 'arrived', 'washing'].includes(job.status)),
     [state.jobs]
   );
+  const canSeeAvailableJobs = state.availability && state.profileStatus === 'approved';
 
   const filteredJobs = useMemo(() => {
-    if (filter === 'all') return state.jobs;
+    const baseJobs = state.jobs.filter((job) =>
+      canSeeAvailableJobs ? true : job.status !== 'pending'
+    );
+    if (filter === 'all') return baseJobs;
     if (filter === 'active') return activeJobs;
-    return state.jobs.filter((job) => job.status === filter);
-  }, [filter, state.jobs, activeJobs]);
+    return baseJobs.filter((job) => job.status === filter);
+  }, [filter, state.jobs, activeJobs, canSeeAvailableJobs]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -58,15 +62,27 @@ export default function JobsScreen() {
         </ScrollView>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Missions disponibles</Text>
+            <Text style={styles.sectionTitle}>Missions</Text>
           <Text style={styles.sectionCount}>{filteredJobs.length} au total</Text>
         </View>
 
         {filteredJobs.length === 0 ? (
           <View style={styles.emptyCard}>
             <Ionicons name="alert-circle" size={20} color={DriverColors.primary} />
-            <Text style={styles.emptyTitle}>Aucune mission</Text>
-            <Text style={styles.emptyText}>Revenez plus tard pour de nouvelles demandes.</Text>
+            <Text style={styles.emptyTitle}>
+              {!state.availability
+                ? 'Vous etes hors ligne'
+                : state.profileStatus !== 'approved'
+                  ? 'Profil non valide'
+                  : 'Aucune mission'}
+            </Text>
+            <Text style={styles.emptyText}>
+              {!state.availability
+                ? 'Activez votre disponibilite pour recevoir des demandes.'
+                : state.profileStatus !== 'approved'
+                  ? 'Validation du compte requise pour recevoir des demandes.'
+                  : 'Revenez plus tard pour de nouvelles demandes.'}
+            </Text>
           </View>
         ) : (
           filteredJobs.map((job) => (
@@ -77,9 +93,18 @@ export default function JobsScreen() {
               onPress={() => router.push({ pathname: '/job-details', params: { id: job.id } })}
             >
               <View style={styles.cardHeader}>
-                <View>
+                <View style={styles.cardIdentity}>
+                  {job.customerAvatarUrl ? (
+                    <Image source={{ uri: job.customerAvatarUrl }} style={styles.avatarImage} />
+                  ) : (
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>{job.customerName.charAt(0)}</Text>
+                    </View>
+                  )}
+                  <View>
                   <Text style={styles.cardTitle}>{job.customerName}</Text>
                   <Text style={styles.cardSubtitle}>{job.service} • {job.vehicle}</Text>
+                  </View>
                 </View>
                 <Text style={styles.cardPrice}>{job.price.toLocaleString()} F CFA</Text>
               </View>
@@ -224,6 +249,30 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: DriverSpacing.sm,
+  },
+  cardIdentity: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: DriverColors.muted,
+  },
+  avatarImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
   },
   cardTitle: {
     fontSize: 15,

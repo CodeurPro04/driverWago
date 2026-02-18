@@ -5,6 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
+import { submitDriverDocuments, uploadDriverDocument } from '@/lib/api';
 
 const docItems = [
   { id: 'id', title: 'Carte d’identité nationale ou passeport' },
@@ -34,6 +35,14 @@ export default function DriverDocumentsScreen() {
     });
     if (!result.canceled) {
       dispatch({ type: 'SET_DOCUMENT', id, uri: result.assets[0].uri });
+      if (state.driverId) {
+        uploadDriverDocument(state.driverId, id, result.assets[0].uri)
+          .then((response) => {
+            dispatch({ type: 'SET_DOCUMENTS', value: (response.user.documents as Record<string, string | null>) || {} });
+            dispatch({ type: 'SET_DOCUMENTS_STATUS', value: (response.user.documents_status || 'pending') as any });
+          })
+          .catch(() => undefined);
+      }
     }
   };
 
@@ -64,8 +73,18 @@ export default function DriverDocumentsScreen() {
           style={[styles.primaryButton, !allUploaded && styles.primaryButtonDisabled]}
           disabled={!allUploaded}
           onPress={() => {
-            dispatch({ type: 'SET_ACCOUNT_STEP', value: 6 });
-            router.push('/account/review');
+            if (!state.driverId) {
+              router.push('/account/review');
+              return;
+            }
+            submitDriverDocuments(state.driverId)
+              .then((response) => {
+                dispatch({ type: 'SET_ACCOUNT_STEP', value: response.user.account_step || 6 });
+                dispatch({ type: 'SET_DOCUMENTS', value: (response.user.documents as Record<string, string | null>) || {} });
+                dispatch({ type: 'SET_DOCUMENTS_STATUS', value: (response.user.documents_status || 'submitted') as any });
+                router.push('/account/review');
+              })
+              .catch(() => router.push('/account/review'));
           }}
         >
           <Text style={styles.primaryText}>Soumettre pour examen</Text>

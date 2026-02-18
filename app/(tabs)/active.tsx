@@ -9,6 +9,7 @@ import {
   Platform,
   Linking,
   Modal,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { requireNativeModule } from 'expo-modules-core';
@@ -30,15 +31,6 @@ export default function ActiveScreen() {
     if (!state.activeJobId) return null;
     return state.jobs.find((job) => job.id == state.activeJobId) || null;
   }, [state.activeJobId, state.jobs]);
-
-  const beforeCount = useMemo(
-    () => (state.beforePhotos || []).filter(Boolean).length,
-    [state.beforePhotos]
-  );
-  const afterCount = useMemo(
-    () => (state.afterPhotos || []).filter(Boolean).length,
-    [state.afterPhotos]
-  );
 
   useEffect(() => {
     if (!activeJob) return;
@@ -174,9 +166,13 @@ export default function ActiveScreen() {
 
         <View style={styles.clientCard}>
           <View style={styles.clientRow}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{activeJob.customerName.charAt(0)}</Text>
-            </View>
+            {activeJob.customerAvatarUrl ? (
+              <Image source={{ uri: activeJob.customerAvatarUrl }} style={styles.avatarImage} />
+            ) : (
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{activeJob.customerName.charAt(0)}</Text>
+              </View>
+            )}
             <View style={styles.clientInfo}>
               <Text style={styles.clientName}>{activeJob.customerName}</Text>
               <View style={styles.ratingRow}>
@@ -223,11 +219,7 @@ export default function ActiveScreen() {
           onPress={() => {
             if (!nextAction) return;
             if (nextAction === 'START_WASH') {
-              if (beforeCount < 2) {
-                router.push('/before-images');
-                return;
-              }
-              dispatch({ type: nextAction, id: activeJob.id });
+              router.push('/before-images');
               return;
             }
             if (nextAction === 'ARRIVE_JOB') {
@@ -235,15 +227,7 @@ export default function ActiveScreen() {
               return;
             }
             if (nextAction === 'COMPLETE_JOB') {
-              if (beforeCount < 2) {
-                router.push('/before-images');
-                return;
-              }
-              if (afterCount < 2) {
-                router.push('/after-images');
-                return;
-              }
-              setConfirmAction(nextAction);
+              router.push('/after-images');
             }
           }}
           disabled={!nextAction}
@@ -431,6 +415,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#E5E7EB',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
   avatarText: {
     fontSize: 16,
