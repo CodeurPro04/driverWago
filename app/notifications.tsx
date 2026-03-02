@@ -1,42 +1,35 @@
-﻿import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing, DriverTypography } from '@/constants/driverTheme';
+import { useDriverStore } from '@/hooks/useDriverStore';
+import { useScreenRefresh } from '@/hooks/useScreenRefresh';
 
-const notifications = [
-  {
-    id: 'n1',
-    title: 'Solde du portefeuille faible',
-    body: "Le solde de votre portefeuille est inférieur à 1000 F CFA. Rechargez-le pour continuer à recevoir de nouvelles demandes.",
-    time: 'Il y a 10 minutes',
-    icon: 'warning',
-  },
-  {
-    id: 'n2',
-    title: 'Lavage terminé avec succès',
-    body: "Vous avez gagné 6 300 F CFA pour le lavage d'aujourd'hui au Carrefour Duncan. Les fonds ont été ajoutés à votre portefeuille.",
-    time: 'Il y a 1 heure',
-    icon: 'checkmark-circle',
-  },
-  {
-    id: 'n3',
-    title: 'Retrait confirmé',
-    body: 'Votre paiement de 20 000 F CFA a été envoyé sur votre compte bancaire. Vous devriez le recevoir dans les 24 heures.',
-    time: 'Hier',
-    icon: 'card',
-  },
-  {
-    id: 'n4',
-    title: 'Mise à jour importante de Ziwago',
-    body: "Une maintenance régulière est prévue demain de 2 h à 4 h. L'application pourrait être temporairement indisponible.",
-    time: 'Il y a 2 jours',
-    icon: 'notifications',
-  },
-];
+const toRelativeTime = (iso: string) => {
+  const createdAt = new Date(iso).getTime();
+  const diffMin = Math.max(1, Math.floor((Date.now() - createdAt) / 60000));
+  if (diffMin < 60) return `Il y a ${diffMin} min`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `Il y a ${diffHour} h`;
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffDay < 7) return `Il y a ${diffDay} j`;
+  return new Date(iso).toLocaleDateString('fr-FR');
+};
 
 export default function NotificationsScreen() {
   const router = useRouter();
+  const { state, dispatch } = useDriverStore();
+  useScreenRefresh({ inbox: true, intervalMs: 20000 });
+
+  const notifications = useMemo(
+    () =>
+      [...state.notifications].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      ),
+    [state.notifications]
+  );
+  const unreadCount = useMemo(() => notifications.filter((item) => !item.read).length, [notifications]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -45,24 +38,60 @@ export default function NotificationsScreen() {
           <Ionicons name="chevron-back" size={20} color={DriverColors.text} />
         </TouchableOpacity>
         <Text style={styles.title}>Notifications</Text>
-        <TouchableOpacity style={styles.clearButton}>
-          <Ionicons name="checkmark" size={18} color={DriverColors.text} />
+        <TouchableOpacity style={styles.clearButton} onPress={() => dispatch({ type: 'MARK_ALL_NOTIFICATIONS_READ' })}>
+          <Ionicons name="checkmark-done" size={18} color={DriverColors.text} />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.summaryBar}>
+        <Text style={styles.summaryText}>{unreadCount} non lue(s)</Text>
+        <TouchableOpacity onPress={() => dispatch({ type: 'CLEAR_NOTIFICATIONS' })}>
+          <Text style={styles.summaryAction}>Effacer tout</Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {notifications.map((item) => (
-          <View key={item.id} style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View style={styles.cardTitleRow}>
-                <Ionicons name={item.icon as any} size={16} color={DriverColors.accent} />
-                <Text style={styles.cardTitle}>{item.title}</Text>
-              </View>
-              <Text style={styles.cardTime}>{item.time}</Text>
-            </View>
-            <Text style={styles.cardBody}>{item.body}</Text>
+        {notifications.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Ionicons name="notifications-off-outline" size={20} color={DriverColors.muted} />
+            <Text style={styles.emptyTitle}>Aucune notification</Text>
+            <Text style={styles.emptyBody}>Les alerts de solde, depots, retraits et mises a jour apparaitront ici.</Text>
           </View>
-        ))}
+        ) : (
+          notifications.map((item) => {
+            const iconName =
+              item.kind === 'earning'
+                ? 'cash-outline'
+                : item.kind === 'deposit'
+                  ? 'arrow-up-circle-outline'
+                  : item.kind === 'withdrawal'
+                    ? 'arrow-down-circle-outline'
+                    : 'information-circle-outline';
+            const iconColor =
+              item.kind === 'earning'
+                ? DriverColors.success
+                : item.kind === 'withdrawal'
+                  ? DriverColors.danger
+                  : DriverColors.primary;
+            return (
+              <TouchableOpacity
+                key={item.id}
+                style={[styles.card, !item.read && styles.cardUnread]}
+                onPress={() => dispatch({ type: 'MARK_NOTIFICATION_READ', id: item.id })}
+              >
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardTitleRow}>
+                    <Ionicons name={iconName as any} size={16} color={iconColor} />
+                    <Text style={styles.cardTitle}>{item.title}</Text>
+                    {!item.read ? <View style={styles.unreadDot} /> : null}
+                  </View>
+                  <Text style={styles.cardTime}>{toRelativeTime(item.createdAt)}</Text>
+                </View>
+                <Text style={styles.cardBody}>{item.body}</Text>
+              </TouchableOpacity>
+            );
+          })
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -102,9 +131,47 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  summaryBar: {
+    paddingHorizontal: DriverSpacing.lg,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  summaryText: {
+    fontSize: 12,
+    color: DriverColors.muted,
+    fontWeight: '600',
+  },
+  summaryAction: {
+    fontSize: 12,
+    color: DriverColors.primary,
+    fontWeight: '700',
+  },
   content: {
-    padding: DriverSpacing.lg,
+    paddingHorizontal: DriverSpacing.lg,
+    paddingBottom: DriverSpacing.lg,
     gap: DriverSpacing.md,
+  },
+  emptyCard: {
+    borderRadius: DriverRadius.md,
+    borderWidth: 1,
+    borderColor: DriverColors.border,
+    backgroundColor: '#F9FAFB',
+    padding: DriverSpacing.lg,
+    alignItems: 'center',
+    gap: 8,
+  },
+  emptyTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: DriverColors.text,
+  },
+  emptyBody: {
+    fontSize: 12,
+    color: DriverColors.muted,
+    textAlign: 'center',
+    lineHeight: 18,
   },
   card: {
     padding: DriverSpacing.md,
@@ -112,6 +179,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: DriverColors.border,
     backgroundColor: '#FFFFFF',
+  },
+  cardUnread: {
+    borderColor: '#BFDBFE',
+    backgroundColor: '#F8FBFF',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -123,6 +194,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flex: 1,
+  },
+  unreadDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: DriverColors.primary,
   },
   cardTitle: {
     fontSize: 13,

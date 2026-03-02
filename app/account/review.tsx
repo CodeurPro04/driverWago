@@ -1,51 +1,89 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, Image, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { DriverColors, DriverSpacing } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
-import { approveDriverProfile, getUserProfile } from '@/lib/api';
+import { getUserProfile } from '@/lib/api';
 
 export default function UnderReviewScreen() {
   const router = useRouter();
   const { state, dispatch } = useDriverStore();
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    if (state.profileStatus !== 'approved') return;
+    const timer = setTimeout(() => {
+      router.replace('/(tabs)');
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [router, state.profileStatus]);
 
   useEffect(() => {
     dispatch({ type: 'SET_ACCOUNT_STEP', value: 7 });
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
 
-    const check = async () => {
+    const check = async (silent = true) => {
       if (!state.driverId) return;
       try {
+        if (!silent) setRefreshing(true);
         const profile = await getUserProfile(state.driverId);
         const status = (profile.user.profile_status || 'pending') as 'pending' | 'approved' | 'rejected';
+        const accountStep = Number(profile.user.account_step || 7);
+        const docs = (profile.user.documents as Record<string, string | null>) || {};
+        const docsStatus = (profile.user.documents_status || 'pending') as 'pending' | 'submitted' | 'approved' | 'rejected';
         dispatch({ type: 'SET_PROFILE_STATUS', value: status });
+        dispatch({ type: 'SET_ACCOUNT_STEP', value: accountStep });
+        dispatch({ type: 'SET_DOCUMENTS', value: docs });
+        dispatch({ type: 'SET_DOCUMENTS_STATUS', value: docsStatus });
+        if (cancelled) return;
+
         if (status === 'approved') {
           dispatch({ type: 'SET_ACCOUNT_STEP', value: 8 });
           router.replace('/(tabs)');
+        } else if (status === 'rejected' || accountStep < 6) {
+          router.replace('/account/documents');
         }
       } catch {
         // keep local state
+      } finally {
+        if (!silent) setRefreshing(false);
       }
     };
 
     check();
+    timer = setInterval(() => {
+      check();
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+    };
   }, [dispatch, router, state.driverId]);
 
-  const handleApproveNow = async () => {
-    if (!state.driverId) {
-      Alert.alert('Session invalide', 'Reconnectez-vous pour continuer.');
-      return;
-    }
-
+  const handleRefreshStatus = async () => {
+    if (!state.driverId || loading || refreshing) return;
     setLoading(true);
     try {
-      const approved = await approveDriverProfile(state.driverId);
-      const status = (approved.user.profile_status || 'approved') as 'pending' | 'approved' | 'rejected';
+      const profile = await getUserProfile(state.driverId);
+      const status = (profile.user.profile_status || 'pending') as 'pending' | 'approved' | 'rejected';
+      const accountStep = Number(profile.user.account_step || 7);
+      const docs = (profile.user.documents as Record<string, string | null>) || {};
+      const docsStatus = (profile.user.documents_status || 'pending') as 'pending' | 'submitted' | 'approved' | 'rejected';
       dispatch({ type: 'SET_PROFILE_STATUS', value: status });
-      dispatch({ type: 'SET_ACCOUNT_STEP', value: approved.user.account_step || 8 });
-      router.replace('/(tabs)');
+      dispatch({ type: 'SET_ACCOUNT_STEP', value: accountStep });
+      dispatch({ type: 'SET_DOCUMENTS', value: docs });
+      dispatch({ type: 'SET_DOCUMENTS_STATUS', value: docsStatus });
+      if (status === 'approved') {
+        dispatch({ type: 'SET_ACCOUNT_STEP', value: 8 });
+        router.replace('/(tabs)');
+      } else if (status === 'rejected' || accountStep < 6) {
+        router.replace('/account/documents');
+      }
     } catch {
-      Alert.alert('Erreur', 'Impossible de valider votre profil maintenant.');
+      // keep local state
     } finally {
       setLoading(false);
     }
@@ -56,14 +94,38 @@ export default function UnderReviewScreen() {
       <View style={styles.content}>
         <Text style={styles.title}>Votre profil est en cours d examen</Text>
         <Text style={styles.body}>
-          Vos informations ont ete transmises au backend. Vous pouvez forcer la validation maintenant pour continuer.
+          Vos documents ont ete transmis. Votre compte reste en attente jusqu a validation par l administrateur.
         </Text>
+        {state.profileStatus !== 'rejected' ? (
+          <Text style={styles.redirectHint}>Redirection automatique vers l application...</Text>
+        ) : null}
 
         <Image source={require('@/assets/screens/Under Review.png')} style={styles.image} resizeMode="contain" />
 
-        <TouchableOpacity style={styles.primaryButton} onPress={handleApproveNow} disabled={loading}>
-          {loading ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.primaryText}>Valider mon profil et continuer</Text>}
+        <View style={styles.statusBox}>
+          <Text style={styles.statusTitle}>
+            Statut: {state.profileStatus === 'approved' ? 'Valide' : state.profileStatus === 'rejected' ? 'Refuse' : 'En attente'}
+          </Text>
+          <Text style={styles.statusBody}>
+            {state.profileStatus === 'rejected'
+              ? 'Votre dossier a ete refuse. Mettez a jour vos documents pour une nouvelle soumission.'
+              : 'Vous ne pouvez pas voir les missions tant que votre compte n est pas valide.'}
+          </Text>
+        </View>
+
+        <TouchableOpacity style={styles.primaryButton} onPress={handleRefreshStatus} disabled={loading || refreshing}>
+          {loading || refreshing ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={styles.primaryText}>Actualiser le statut</Text>
+          )}
         </TouchableOpacity>
+
+        {state.profileStatus === 'rejected' ? (
+          <TouchableOpacity style={styles.secondaryButton} onPress={() => router.replace('/account/documents')}>
+            <Text style={styles.secondaryText}>Mettre a jour mes documents</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
     </SafeAreaView>
   );
@@ -90,7 +152,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: DriverColors.muted,
     lineHeight: 18,
-    marginBottom: 10,
+    marginBottom: 6,
+  },
+  redirectHint: {
+    alignSelf: 'flex-start',
+    fontSize: 11,
+    color: DriverColors.primary,
+    fontWeight: '600',
+    marginBottom: 4,
   },
   image: {
     width: '100%',
@@ -109,5 +178,40 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
+  },
+  statusBox: {
+    width: '100%',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: DriverColors.border,
+    backgroundColor: '#F9FAFB',
+    padding: DriverSpacing.md,
+    marginBottom: DriverSpacing.md,
+  },
+  statusTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: DriverColors.text,
+    marginBottom: 6,
+  },
+  statusBody: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: DriverColors.muted,
+  },
+  secondaryButton: {
+    width: '100%',
+    marginTop: DriverSpacing.sm,
+    borderWidth: 1,
+    borderColor: DriverColors.border,
+    borderRadius: 999,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  secondaryText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: DriverColors.text,
   },
 });

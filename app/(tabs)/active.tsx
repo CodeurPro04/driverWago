@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -10,100 +10,148 @@ import {
   Linking,
   Modal,
   Image,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { requireNativeModule } from 'expo-modules-core';
-import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
+import DriverSafeMap, { DriverMapRegion } from '@/components/DriverSafeMap';
+import { useScreenRefresh } from '@/hooks/useScreenRefresh';
+
+const DEFAULT_REGION: DriverMapRegion = {
+  latitude: 5.3364,
+  longitude: -4.0267,
+  latitudeDelta: 0.045,
+  longitudeDelta: 0.045,
+};
+
+const STATUS_META: Record<string, { label: string; bg: string; color: string }> = {
+  accepted: { label: 'Mission acceptee', bg: '#DBEAFE', color: '#1D4ED8' },
+  enRoute: { label: 'En route', bg: '#E0E7FF', color: '#4338CA' },
+  arrived: { label: 'Arrive sur place', bg: '#EDE9FE', color: '#6D28D9' },
+  washing: { label: 'Lavage en cours', bg: '#CCFBF1', color: '#0F766E' },
+  completed: { label: 'Mission terminee', bg: '#DCFCE7', color: '#15803D' },
+};
+const COMMISSION_RATE = 0.2;
+
+const STEPS = [
+  { key: 'enRoute', label: 'En route vers le client' },
+  { key: 'arrived', label: 'Arrive sur place' },
+  { key: 'washing', label: 'Lavage demarre' },
+  { key: 'completed', label: 'Mission terminee' },
+] as const;
+
+const getProgressIndex = (status: string) => {
+  if (status === 'accepted' || status === 'enRoute') return 0;
+  if (status === 'arrived') return 1;
+  if (status === 'washing') return 2;
+  if (status === 'completed') return 3;
+  return -1;
+};
 
 export default function ActiveScreen() {
   const router = useRouter();
   const { state, dispatch } = useDriverStore();
-  const [confirmAction, setConfirmAction] = useState<'ARRIVE_JOB' | 'COMPLETE_JOB' | null>(null);
-  const [camera, setCamera] = useState({
-    coordinates: { latitude: 5.3364, longitude: -4.0267 },
-    zoom: 13,
-  });
+  useScreenRefresh({ jobs: true, intervalMs: 8000 });
+  const [confirmArrive, setConfirmArrive] = useState(false);
+  const [mapRegion, setMapRegion] = useState<DriverMapRegion>(DEFAULT_REGION);
 
   const activeJob = useMemo(() => {
     if (!state.activeJobId) return null;
-    return state.jobs.find((job) => job.id == state.activeJobId) || null;
+    return state.jobs.find((job) => job.id === state.activeJobId) || null;
   }, [state.activeJobId, state.jobs]);
 
-  useEffect(() => {
-    if (!activeJob) return;
-    setCamera((prev) => ({
-      ...prev,
-      coordinates: { latitude: activeJob.latitude, longitude: activeJob.longitude },
-    }));
+  const statusMeta = activeJob ? STATUS_META[activeJob.status] || STATUS_META.enRoute : STATUS_META.enRoute;
+  const commissionAmount = useMemo(
+    () => (activeJob ? Math.round(activeJob.price * COMMISSION_RATE) : 0),
+    [activeJob]
+  );
+  const netAmount = useMemo(
+    () => (activeJob ? Math.max(0, activeJob.price - commissionAmount) : 0),
+    [activeJob, commissionAmount]
+  );
+
+  const initialRegion = useMemo<DriverMapRegion>(() => {
+    if (!activeJob) return DEFAULT_REGION;
+    return {
+      latitude: activeJob.latitude || DEFAULT_REGION.latitude,
+      longitude: activeJob.longitude || DEFAULT_REGION.longitude,
+      latitudeDelta: 0.015,
+      longitudeDelta: 0.015,
+    };
   }, [activeJob]);
 
   useEffect(() => {
-    let mounted = true;
-    const init = async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') return;
-        const location = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        if (!mounted) return;
-        setCamera((prev) => ({
-          ...prev,
-          coordinates: { latitude: location.coords.latitude, longitude: location.coords.longitude },
-        }));
-      } catch (error) {
-        // Keep fallback camera.
-      }
-    };
-    init();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    setMapRegion(initialRegion);
+  }, [initialRegion]);
 
-  const markers = useMemo(() => {
-    if (!activeJob) return [];
-    return [
-      {
-        id: activeJob.id,
-        coordinates: { latitude: activeJob.latitude, longitude: activeJob.longitude },
-        title: activeJob.customerName,
-        snippet: activeJob.address,
-        tintColor: DriverColors.primary,
-      },
-    ];
-  }, [activeJob]);
+  useEffect(() => {
+    if (!state.lastAutoCancelledJobId) return;
+    Alert.alert(
+      'Mission annulee',
+      'Le client a annule cette mission. Elle est retiree automatiquement de vos missions en cours.',
+      [
+        {
+          text: 'OK',
+          onPress: () => dispatch({ type: 'CLEAR_AUTO_CANCELLED_NOTICE' }),
+        },
+      ]
+    );
+  }, [state.lastAutoCancelledJobId, dispatch]);
+
+  const progressIndex = useMemo(() => getProgressIndex(activeJob?.status || ''), [activeJob?.status]);
 
   const nextAction = useMemo(() => {
     if (!activeJob) return null;
-    if (activeJob.status === 'enRoute') return 'ARRIVE_JOB';
+    if (activeJob.status === 'accepted' || activeJob.status === 'enRoute') return 'ARRIVE_JOB';
     if (activeJob.status === 'arrived') return 'START_WASH';
     if (activeJob.status === 'washing') return 'COMPLETE_JOB';
     return null;
   }, [activeJob]);
 
+  const focusDestination = () => {
+    if (!activeJob) return;
+    setMapRegion({
+      latitude: activeJob.latitude,
+      longitude: activeJob.longitude,
+      latitudeDelta: 0.012,
+      longitudeDelta: 0.012,
+    });
+  };
+
   const openExternalMaps = () => {
     if (!activeJob) return;
     const { latitude, longitude } = activeJob;
-    const url = Platform.OS === 'ios'
-      ? `http://maps.apple.com/?daddr=${latitude},${longitude}`
-      : `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
+    const url =
+      Platform.OS === 'ios'
+        ? `http://maps.apple.com/?daddr=${latitude},${longitude}`
+        : `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
     Linking.openURL(url);
   };
 
-  let hasExpoMaps = true;
-  let MapView: any = null;
-  try {
-    requireNativeModule('ExpoMaps');
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const ExpoMaps = require('expo-maps');
-    MapView = Platform.OS === 'ios' ? ExpoMaps.AppleMaps.View : ExpoMaps.GoogleMaps.View;
-  } catch (error) {
-    hasExpoMaps = false;
-  }
+  const callCustomer = () => {
+    if (!activeJob?.phone) return;
+    Linking.openURL(`tel:${activeJob.phone}`);
+  };
+
+  const handlePrimaryAction = () => {
+    if (!activeJob || !nextAction) return;
+
+    if (nextAction === 'ARRIVE_JOB') {
+      setConfirmArrive(true);
+      return;
+    }
+
+    if (nextAction === 'START_WASH') {
+      router.push('/before-images');
+      return;
+    }
+
+    if (nextAction === 'COMPLETE_JOB') {
+      router.push('/after-images');
+    }
+  };
 
   if (!activeJob) {
     return (
@@ -111,9 +159,10 @@ export default function ActiveScreen() {
         <View style={styles.emptyWrap}>
           <Ionicons name="navigate" size={42} color={DriverColors.primary} />
           <Text style={styles.emptyTitle}>Aucune mission en cours</Text>
-          <Text style={styles.emptyText}>
-            Acceptez une demande pour suivre votre itinéraire en direct.
-          </Text>
+          <Text style={styles.emptyText}>Acceptez une demande pour suivre votre itineraire en direct.</Text>
+          <TouchableOpacity style={styles.primaryButton} onPress={() => router.replace('/(tabs)/missions')}>
+            <Text style={styles.primaryButtonText}>Voir les missions</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -122,167 +171,144 @@ export default function ActiveScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.mapSection}>
-        {hasExpoMaps ? (
-          <MapView
-            style={styles.map}
-            cameraPosition={camera}
-            markers={markers}
-            uiSettings={{
-              compassEnabled: false,
-              myLocationButtonEnabled: false,
-            }}
-            properties={{
-              isMyLocationEnabled: true,
-            }}
-          />
-        ) : (
-          <View style={styles.mapFallback}>
-            <Ionicons name="map" size={26} color={DriverColors.primary} />
-            <Text style={styles.mapFallbackTitle}>Carte indisponible (Expo Go)</Text>
-            <Text style={styles.mapFallbackText}>
-              Installez un dev build pour activer la carte.
-            </Text>
+        <DriverSafeMap
+          style={styles.map}
+          region={mapRegion}
+          marker={{
+            latitude: activeJob.latitude,
+            longitude: activeJob.longitude,
+            title: activeJob.customerName,
+            description: activeJob.address,
+          }}
+          markerIcon="sparkles"
+        />
+
+        <View style={styles.topActions}>
+          <TouchableOpacity style={styles.iconButton} onPress={() => router.replace('/(tabs)/missions')}>
+            <Ionicons name="chevron-back" size={18} color={DriverColors.primary} />
+          </TouchableOpacity>
+          <View style={[styles.statusBadge, { backgroundColor: statusMeta.bg }]}>
+            <Text style={[styles.statusText, { color: statusMeta.color }]}>{statusMeta.label}</Text>
           </View>
-        )}
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={18} color={DriverColors.primary} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navButton} onPress={openExternalMaps}>
-          <Ionicons name="navigate" size={14} color={DriverColors.primary} />
-          <Text style={styles.navButtonText}>Navigateur</Text>
-        </TouchableOpacity>
+          <TouchableOpacity style={styles.iconButton} onPress={focusDestination}>
+            <Ionicons name="locate" size={18} color={DriverColors.primary} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.mapQuickActions}>
+          <TouchableOpacity style={styles.quickActionPrimary} onPress={openExternalMaps}>
+            <Ionicons name="navigate" size={16} color="#FFFFFF" />
+            <Text style={styles.quickActionPrimaryText}>Naviguer</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.quickActionSecondary} onPress={callCustomer}>
+            <Ionicons name="call" size={16} color={DriverColors.primary} />
+            <Text style={styles.quickActionSecondaryText}>Appeler</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.sheet} showsVerticalScrollIndicator={false}>
-        <View style={styles.sheetHeader}>
-          <View style={styles.sheetHandle} />
-          {activeJob.status === 'washing' ? (
-            <View style={styles.statusPill}>
-              <Ionicons name="time" size={14} color={DriverColors.primary} />
-              <Text style={styles.statusPillText}>Lavage en cours</Text>
-            </View>
-          ) : null}
-        </View>
-
-        <View style={styles.clientCard}>
-          <View style={styles.clientRow}>
+        <View style={styles.identityCard}>
+          <View style={styles.identityHeader}>
             {activeJob.customerAvatarUrl ? (
               <Image source={{ uri: activeJob.customerAvatarUrl }} style={styles.avatarImage} />
             ) : (
-              <View style={styles.avatar}>
+              <View style={styles.avatarFallback}>
                 <Text style={styles.avatarText}>{activeJob.customerName.charAt(0)}</Text>
               </View>
             )}
-            <View style={styles.clientInfo}>
-              <Text style={styles.clientName}>{activeJob.customerName}</Text>
-              <View style={styles.ratingRow}>
-                <Ionicons name="star" size={12} color={DriverColors.accent} />
-                <Text style={styles.ratingText}>4.5</Text>
-              </View>
+            <View style={styles.identityBody}>
+              <Text style={styles.customerName}>{activeJob.customerName}</Text>
+              <Text style={styles.subInfo}>{activeJob.service}</Text>
             </View>
+            <Text style={styles.priceText}>{activeJob.price.toLocaleString()} F CFA</Text>
           </View>
 
-          <View style={styles.infoRow}>
+          <View style={styles.infoLine}>
+            <Ionicons name="car" size={14} color={DriverColors.primary} />
+            <Text style={styles.infoText}>{activeJob.vehicle}</Text>
+          </View>
+          <View style={styles.infoLine}>
             <Ionicons name="location" size={14} color={DriverColors.primary} />
             <Text style={styles.infoText}>{activeJob.address}</Text>
           </View>
-          <Text style={styles.metaText}>
-            À {activeJob.distanceKm.toFixed(1)} km | {activeJob.etaMin} min
-          </Text>
-
-          <View style={styles.infoRow}>
+          <View style={styles.infoLine}>
             <Ionicons name="time" size={14} color={DriverColors.primary} />
-            <Text style={styles.infoText}>{activeJob.scheduledAt}</Text>
+            <Text style={styles.infoText}>{activeJob.scheduledAt} - {activeJob.etaMin} min</Text>
           </View>
+        </View>
 
-          <View style={styles.priceRow}>
-            <Text style={styles.priceValue}>{activeJob.price.toLocaleString()} F CFA</Text>
-            <Text style={styles.priceMeta}>
-              Vous recevrez {(activeJob.price * 0.8).toLocaleString()} F CFA après commission.
+        <View style={styles.financeCard}>
+          <View style={styles.financeHeader}>
+            <Ionicons name="cash" size={14} color={DriverColors.primary} />
+            <Text style={styles.financeTitle}>Estimation financiere</Text>
+          </View>
+          <View style={styles.financeRow}>
+            <Text style={styles.financeLabel}>Montant commande</Text>
+            <Text style={styles.financeValue}>{activeJob.price.toLocaleString()} F CFA</Text>
+          </View>
+          <View style={styles.financeRow}>
+            <Text style={styles.financeLabel}>Commission ({Math.round(COMMISSION_RATE * 100)}%)</Text>
+            <Text style={styles.financeNegative}>- {commissionAmount.toLocaleString()} F CFA</Text>
+          </View>
+          <View style={styles.financeDivider} />
+          <View style={styles.financeRow}>
+            <Text style={styles.financeNetLabel}>Gain net estime</Text>
+            <Text style={styles.financeNetValue}>{netAmount.toLocaleString()} F CFA</Text>
+          </View>
+        </View>
+
+        <View style={styles.timelineCard}>
+          <Text style={styles.timelineTitle}>Suivi de mission</Text>
+          {STEPS.map((step, index) => {
+            const active = index <= progressIndex;
+            const current = index === progressIndex;
+            return (
+              <View key={step.key} style={styles.timelineRow}>
+                <View style={styles.timelineLeft}>
+                  <View style={[styles.timelineDot, active && styles.timelineDotActive, current && styles.timelineDotCurrent]} />
+                  {index < STEPS.length - 1 ? <View style={[styles.timelineLine, active && styles.timelineLineActive]} /> : null}
+                </View>
+                <Text style={[styles.timelineStepText, current && styles.timelineStepTextCurrent]}>{step.label}</Text>
+              </View>
+            );
+          })}
+        </View>
+
+        {nextAction ? (
+          <TouchableOpacity style={styles.primaryButton} onPress={handlePrimaryAction}>
+            <Text style={styles.primaryButtonText}>
+              {nextAction === 'ARRIVE_JOB'
+                ? 'Je suis arrive'
+                : nextAction === 'START_WASH'
+                  ? 'Demarrer le lavage'
+                  : 'Lavage termine'}
             </Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.statusInfoCard}>
+            <Ionicons name="checkmark-circle" size={16} color={DriverColors.success} />
+            <Text style={styles.statusInfoText}>Mission finalisee. Vous pouvez retourner aux missions.</Text>
           </View>
-        </View>
-
-        <View style={styles.tagRow}>
-          <View style={styles.tagCard}>
-            <Ionicons name="car" size={18} color={DriverColors.primary} />
-            <Text style={styles.tagText}>{activeJob.vehicle}</Text>
-          </View>
-          <View style={styles.tagCard}>
-            <Ionicons name="sparkles" size={18} color={DriverColors.primary} />
-            <Text style={styles.tagText}>{activeJob.service}</Text>
-          </View>
-        </View>
-
-        <TouchableOpacity
-          style={styles.primaryButton}
-          onPress={() => {
-            if (!nextAction) return;
-            if (nextAction === 'START_WASH') {
-              router.push('/before-images');
-              return;
-            }
-            if (nextAction === 'ARRIVE_JOB') {
-              setConfirmAction(nextAction);
-              return;
-            }
-            if (nextAction === 'COMPLETE_JOB') {
-              router.push('/after-images');
-            }
-          }}
-          disabled={!nextAction}
-        >
-          <Text style={styles.primaryButtonText}>
-            {nextAction === 'ARRIVE_JOB'
-              ? 'Je suis arrivé'
-              : nextAction === 'START_WASH'
-                ? 'Démarrer le lavage'
-                : nextAction === 'COMPLETE_JOB'
-                  ? 'Lavage terminé'
-                  : 'Mission terminée'}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.cancelButton}
-          onPress={() => dispatch({ type: 'CANCEL_JOB', id: activeJob.id })}
-        >
-          <Text style={styles.cancelText}>Annuler</Text>
-        </TouchableOpacity>
+        )}
       </ScrollView>
 
-      <Modal
-        visible={confirmAction !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setConfirmAction(null)}
-      >
+      <Modal visible={confirmArrive} transparent animationType="fade" onRequestClose={() => setConfirmArrive(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>
-              {confirmAction === 'ARRIVE_JOB'
-                ? "Confirmez-vous être arrivé à l'emplacement du client ?"
-                : 'Êtes-vous sûr d’avoir terminé le lavage du véhicule ?'}
-            </Text>
+            <Text style={styles.modalTitle}>Confirmez-vous etre arrive a l emplacement du client ?</Text>
             <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.modalSecondary}
-                onPress={() => setConfirmAction(null)}
-              >
-                <Text style={styles.modalSecondaryText}>
-                  {confirmAction === 'ARRIVE_JOB' ? 'Retour' : 'Annuler'}
-                </Text>
+              <TouchableOpacity style={styles.modalSecondary} onPress={() => setConfirmArrive(false)}>
+                <Text style={styles.modalSecondaryText}>Retour</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.modalPrimary}
                 onPress={() => {
-                  if (!confirmAction) return;
-                  dispatch({ type: confirmAction, id: activeJob.id });
-                  setConfirmAction(null);
+                  dispatch({ type: 'ARRIVE_JOB', id: activeJob.id });
+                  setConfirmArrive(false);
                 }}
               >
-                <Text style={styles.modalPrimaryText}>
-                  {confirmAction === 'ARRIVE_JOB' ? 'Confirmer' : "Oui, j'ai terminé"}
-                </Text>
+                <Text style={styles.modalPrimaryText}>Confirmer</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -298,242 +324,290 @@ const styles = StyleSheet.create({
     backgroundColor: DriverColors.background,
   },
   mapSection: {
-    height: 320,
+    height: 360,
   },
   map: {
     ...StyleSheet.absoluteFillObject,
   },
-  mapFallback: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#E0F2FE',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingHorizontal: 20,
-  },
-  mapFallbackTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: DriverColors.text,
-    textAlign: 'center',
-  },
-  mapFallbackText: {
-    fontSize: 11,
-    color: DriverColors.muted,
-    textAlign: 'center',
-  },
-  backButton: {
+  topActions: {
     position: 'absolute',
     top: 14,
     left: 14,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  navButton: {
-    position: 'absolute',
-    top: 14,
     right: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  iconButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: DriverColors.border,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.12,
     shadowRadius: 6,
-    elevation: 6,
+    elevation: 4,
   },
-  navButtonText: {
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
+  },
+  statusText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  mapQuickActions: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    bottom: 14,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  quickActionPrimary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: DriverColors.primary,
+    borderRadius: 999,
+    paddingVertical: 11,
+  },
+  quickActionPrimaryText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  quickActionSecondary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 999,
+    paddingVertical: 11,
+    borderWidth: 1,
+    borderColor: DriverColors.border,
+  },
+  quickActionSecondaryText: {
     color: DriverColors.primary,
+    fontSize: 12,
+    fontWeight: '700',
   },
   sheet: {
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: DriverSpacing.lg,
-    paddingBottom: 140,
+    marginTop: 8,
     borderTopLeftRadius: DriverRadius.xl,
     borderTopRightRadius: DriverRadius.xl,
-    marginTop: -20,
-    paddingTop: 16,
+    paddingHorizontal: DriverSpacing.lg,
+    paddingTop: DriverSpacing.xl,
+    paddingBottom: 140,
+    gap: 14,
   },
-  sheetHeader: {
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: DriverSpacing.sm,
-  },
-  sheetHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#E5E7EB',
-  },
-  statusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: '#EFF6FF',
-  },
-  statusPillText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: DriverColors.primary,
-  },
-  clientCard: {
+  identityCard: {
     backgroundColor: '#F9FAFB',
-    borderRadius: DriverRadius.lg,
-    padding: DriverSpacing.md,
     borderWidth: 1,
     borderColor: DriverColors.border,
-    marginBottom: DriverSpacing.md,
+    borderRadius: DriverRadius.lg,
+    padding: DriverSpacing.md,
+    gap: 8,
   },
-  clientRow: {
+  identityHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: DriverSpacing.sm,
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#E5E7EB',
-    alignItems: 'center',
-    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 4,
   },
   avatarImage: {
     width: 44,
     height: 44,
     borderRadius: 22,
   },
+  avatarFallback: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   avatarText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: DriverColors.muted,
   },
-  clientInfo: {
+  identityBody: {
     flex: 1,
   },
-  clientName: {
+  customerName: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
     color: DriverColors.text,
   },
-  ratingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 4,
-  },
-  ratingText: {
+  subInfo: {
     fontSize: 12,
     color: DriverColors.muted,
+    marginTop: 2,
   },
-  infoRow: {
+  priceText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: DriverColors.text,
+  },
+  infoLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
+    gap: 8,
   },
   infoText: {
     flex: 1,
     fontSize: 12,
     color: DriverColors.text,
+    fontWeight: '600',
   },
-  metaText: {
-    fontSize: 12,
-    color: DriverColors.muted,
-    marginBottom: 6,
-  },
-  priceRow: {
-    marginTop: 6,
-    gap: 4,
-  },
-  priceValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: DriverColors.text,
-  },
-  priceMeta: {
-    fontSize: 11,
-    color: DriverColors.muted,
-  },
-  tagRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: DriverSpacing.lg,
-  },
-  tagCard: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-    borderRadius: DriverRadius.md,
+  financeCard: {
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: DriverColors.border,
-    paddingVertical: 12,
+    borderRadius: DriverRadius.lg,
+    padding: DriverSpacing.md,
+    gap: 8,
+  },
+  financeHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  tagText: {
+  financeTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: DriverColors.text,
+  },
+  financeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  financeLabel: {
     fontSize: 12,
+    color: DriverColors.muted,
     fontWeight: '600',
+  },
+  financeValue: {
+    fontSize: 12,
+    color: DriverColors.text,
+    fontWeight: '700',
+  },
+  financeNegative: {
+    fontSize: 12,
+    color: '#DC2626',
+    fontWeight: '700',
+  },
+  financeDivider: {
+    height: 1,
+    backgroundColor: DriverColors.border,
+  },
+  financeNetLabel: {
+    fontSize: 13,
+    color: DriverColors.text,
+    fontWeight: '800',
+  },
+  financeNetValue: {
+    fontSize: 14,
+    color: DriverColors.success,
+    fontWeight: '900',
+  },
+  timelineCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: DriverColors.border,
+    borderRadius: DriverRadius.lg,
+    padding: DriverSpacing.md,
+  },
+  timelineTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: DriverColors.text,
+    marginBottom: 10,
+  },
+  timelineRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  timelineLeft: {
+    alignItems: 'center',
+  },
+  timelineDot: {
+    width: 11,
+    height: 11,
+    borderRadius: 5.5,
+    backgroundColor: '#D1D5DB',
+    marginTop: 2,
+  },
+  timelineDotActive: {
+    backgroundColor: DriverColors.primary,
+  },
+  timelineDotCurrent: {
+    backgroundColor: DriverColors.success,
+  },
+  timelineLine: {
+    width: 2,
+    minHeight: 24,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 3,
+  },
+  timelineLineActive: {
+    backgroundColor: '#93C5FD',
+  },
+  timelineStepText: {
+    flex: 1,
+    fontSize: 12,
+    color: DriverColors.muted,
+    fontWeight: '600',
+    paddingBottom: 8,
+  },
+  timelineStepTextCurrent: {
     color: DriverColors.text,
   },
   primaryButton: {
     backgroundColor: DriverColors.primary,
-    paddingVertical: 14,
+    paddingVertical: 13,
     borderRadius: 999,
     alignItems: 'center',
-    marginBottom: 10,
+    justifyContent: 'center',
   },
   primaryButtonText: {
     fontSize: 14,
     fontWeight: '700',
     color: '#FFFFFF',
   },
-  cancelButton: {
-    paddingVertical: 12,
-    borderRadius: 999,
+  statusInfoCard: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: DriverRadius.md,
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#FEE2E2',
-    backgroundColor: '#FFF5F5',
+    borderColor: DriverColors.border,
   },
-  cancelText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: DriverColors.danger,
-  },
-  emptyWrap: {
+  statusInfoText: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: DriverSpacing.lg,
-    gap: 10,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: DriverColors.text,
-  },
-  emptyText: {
     fontSize: 12,
     color: DriverColors.muted,
-    textAlign: 'center',
   },
   modalBackdrop: {
     flex: 1,
@@ -583,5 +657,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  emptyWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: DriverSpacing.lg,
+    gap: 10,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: DriverColors.text,
+  },
+  emptyText: {
+    fontSize: 12,
+    color: DriverColors.muted,
+    textAlign: 'center',
+    marginBottom: 8,
   },
 });

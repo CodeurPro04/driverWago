@@ -12,10 +12,13 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { DriverColors, DriverRadius, DriverSpacing, DriverTypography } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
+import { useScreenRefresh } from '@/hooks/useScreenRefresh';
 
 export default function DashboardScreen() {
   const router = useRouter();
   const { state, dispatch } = useDriverStore();
+  useScreenRefresh({ jobs: true, intervalMs: 15000 });
+  const unreadCount = useMemo(() => state.notifications.filter((item) => !item.read).length, [state.notifications]);
 
   const pendingJobs = useMemo(
     () => state.jobs.filter((job) => job.status === 'pending'),
@@ -53,6 +56,11 @@ export default function DashboardScreen() {
           </View>
           <TouchableOpacity style={styles.notificationButton} onPress={() => router.push('/notifications')}>
             <Ionicons name="notifications-outline" size={20} color={DriverColors.primary} />
+            {unreadCount > 0 ? (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+              </View>
+            ) : null}
           </TouchableOpacity>
         </View>
 
@@ -202,6 +210,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  badge: {
+    position: 'absolute',
+    right: -6,
+    top: -5,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '700',
   },
   section: {
     marginBottom: DriverSpacing.lg,

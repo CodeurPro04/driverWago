@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,48 +6,65 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing, DriverTypography } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
-
-const transactions = [
-  {
-    id: 't1',
-    title: 'Commission déduite',
-    date: 'Oct 13, 2025, 14:26',
-    amount: -480,
-  },
-  {
-    id: 't2',
-    title: 'Lavage complet, VUS',
-    date: 'Oct 13, 2025, 14:25',
-    amount: 4800,
-  },
-  {
-    id: 't3',
-    title: 'Recharger via Orange Money',
-    date: 'Oct 12, 2025, 18:47',
-    amount: 5000,
-  },
-  {
-    id: 't4',
-    title: 'Commission déduite',
-    date: 'Oct 10, 2025, 16:04',
-    amount: -320,
-  },
-  {
-    id: 't5',
-    title: 'Extérieur uniquement, Berline',
-    date: 'Oct 10, 2025, 16:03',
-    amount: 3200,
-  },
-];
+import { useScreenRefresh } from '@/hooks/useScreenRefresh';
 
 export default function WalletScreen() {
   const router = useRouter();
   const { state, dispatch } = useDriverStore();
+  useScreenRefresh({ inbox: true, intervalMs: 30000 });
+
+  const unreadCount = useMemo(() => state.notifications.filter((item) => !item.read).length, [state.notifications]);
+  const transactions = useMemo(
+    () =>
+      [...state.walletTransactions].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      ),
+    [state.walletTransactions]
+  );
+
+  const handleDeposit = () => {
+    Alert.alert('Depot', 'Choisissez le montant a ajouter.', [
+      { text: '5 000 F CFA', onPress: () => dispatch({ type: 'ADD_WALLET_TRANSACTION', mode: 'deposit', amount: 5000, method: 'Orange Money' }) },
+      { text: '10 000 F CFA', onPress: () => dispatch({ type: 'ADD_WALLET_TRANSACTION', mode: 'deposit', amount: 10000, method: 'Orange Money' }) },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
+  };
+
+  const handleWithdraw = () => {
+    if (state.cashoutBalance <= 0) {
+      Alert.alert('Solde insuffisant', 'Votre solde est insuffisant pour effectuer un retrait.');
+      return;
+    }
+    Alert.alert('Retrait', 'Choisissez le montant a retirer.', [
+      {
+        text: '5 000 F CFA',
+        onPress: () => {
+          if (state.cashoutBalance < 5000) {
+            Alert.alert('Solde insuffisant', 'Votre solde actuel ne permet pas ce retrait.');
+            return;
+          }
+          dispatch({ type: 'ADD_WALLET_TRANSACTION', mode: 'withdrawal', amount: 5000, method: 'Virement bancaire' });
+        },
+      },
+      {
+        text: '10 000 F CFA',
+        onPress: () => {
+          if (state.cashoutBalance < 10000) {
+            Alert.alert('Solde insuffisant', 'Votre solde actuel ne permet pas ce retrait.');
+            return;
+          }
+          dispatch({ type: 'ADD_WALLET_TRANSACTION', mode: 'withdrawal', amount: 10000, method: 'Virement bancaire' });
+        },
+      },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -73,6 +90,11 @@ export default function WalletScreen() {
           </View>
           <TouchableOpacity style={styles.notificationButton} onPress={() => router.push('/notifications')}>
             <Ionicons name="notifications-outline" size={20} color={DriverColors.primary} />
+            {unreadCount > 0 ? (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+              </View>
+            ) : null}
           </TouchableOpacity>
         </View>
 
@@ -81,41 +103,49 @@ export default function WalletScreen() {
             <Text style={styles.balanceLabel}>Solde du portefeuille</Text>
             <Ionicons name="chevron-forward" size={18} color={DriverColors.muted} />
           </View>
-          <Text style={styles.balanceValue}>{state.cashoutBalance.toLocaleString()} F CFA</Text>
+          <Text style={styles.balanceValue}>{Math.max(0, state.cashoutBalance).toLocaleString()} F CFA</Text>
           <View style={styles.balanceActions}>
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity style={styles.actionButton} onPress={handleDeposit}>
               <Ionicons name="add" size={16} color={DriverColors.primary} />
-              <Text style={styles.actionText}>Recharger</Text>
+              <Text style={styles.actionText}>Depot</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity style={styles.actionButton} onPress={handleWithdraw}>
               <Ionicons name="arrow-down" size={16} color={DriverColors.primary} />
-              <Text style={styles.actionText}>Retirer</Text>
+              <Text style={styles.actionText}>Retrait</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Transaction History</Text>
+          <Text style={styles.sectionTitle}>Historique des transactions</Text>
         </View>
 
-        {transactions.map((item) => (
-          <View key={item.id} style={styles.transactionCard}>
-            <View style={styles.transactionIcon}>
-              <Ionicons
-                name={item.amount < 0 ? 'arrow-down' : 'arrow-up'}
-                size={16}
-                color={item.amount < 0 ? DriverColors.danger : DriverColors.primary}
-              />
-            </View>
-            <View style={styles.transactionBody}>
-              <Text style={styles.transactionTitle}>{item.title}</Text>
-              <Text style={styles.transactionDate}>{item.date}</Text>
-            </View>
-            <Text style={[styles.transactionAmount, item.amount < 0 && styles.transactionAmountNegative]}>
-              {item.amount > 0 ? '+' : ''}{item.amount.toLocaleString()} F CFA
-            </Text>
+        {transactions.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>Aucune transaction</Text>
+            <Text style={styles.emptyText}>Vos gains, depots et retraits seront affiches ici.</Text>
           </View>
-        ))}
+        ) : (
+          transactions.map((item) => (
+            <View key={item.id} style={styles.transactionCard}>
+              <View style={styles.transactionIcon}>
+                <Ionicons
+                  name={item.amount < 0 ? 'arrow-down' : 'arrow-up'}
+                  size={16}
+                  color={item.amount < 0 ? DriverColors.danger : DriverColors.primary}
+                />
+              </View>
+              <View style={styles.transactionBody}>
+                <Text style={styles.transactionTitle}>{item.title}</Text>
+                <Text style={styles.transactionDate}>{item.date}</Text>
+              </View>
+              <Text style={[styles.transactionAmount, item.amount < 0 && styles.transactionAmountNegative]}>
+                {item.amount > 0 ? '+' : ''}
+                {item.amount.toLocaleString()} F CFA
+              </Text>
+            </View>
+          ))
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -165,6 +195,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  badge: {
+    position: 'absolute',
+    right: -6,
+    top: -5,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '700',
   },
   balanceCard: {
     backgroundColor: '#F9FAFB',
@@ -216,6 +263,25 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...DriverTypography.section,
+  },
+  emptyCard: {
+    padding: DriverSpacing.lg,
+    borderRadius: DriverRadius.md,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: DriverColors.border,
+    alignItems: 'center',
+    gap: 8,
+  },
+  emptyTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: DriverColors.text,
+  },
+  emptyText: {
+    fontSize: 12,
+    color: DriverColors.muted,
+    textAlign: 'center',
   },
   transactionCard: {
     flexDirection: 'row',

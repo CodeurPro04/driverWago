@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing, DriverTypography } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
+import { useScreenRefresh } from '@/hooks/useScreenRefresh';
 
 const FILTERS = [
   { id: 'all', label: 'Tout' },
@@ -13,25 +14,43 @@ const FILTERS = [
   { id: 'cancelled', label: 'Annulées' },
 ];
 
+const STATUS_META: Record<string, { label: string; bg: string; color: string }> = {
+  pending: { label: 'Nouvelle', bg: '#E0F2FE', color: '#0369A1' },
+  accepted: { label: 'Acceptee', bg: '#DBEAFE', color: '#1D4ED8' },
+  enRoute: { label: 'En route', bg: '#E0E7FF', color: '#4338CA' },
+  arrived: { label: 'Arrivee', bg: '#EDE9FE', color: '#6D28D9' },
+  washing: { label: 'Lavage', bg: '#CCFBF1', color: '#0F766E' },
+  completed: { label: 'Terminee', bg: '#DCFCE7', color: '#15803D' },
+  cancelled: { label: 'Annulee par client', bg: '#FEE2E2', color: '#B91C1C' },
+};
+
 export default function JobsScreen() {
   const router = useRouter();
   const { state, dispatch } = useDriverStore();
+  useScreenRefresh({ jobs: true, intervalMs: 12000 });
   const [filter, setFilter] = useState('all');
 
   const activeJobs = useMemo(
     () => state.jobs.filter((job) => ['accepted', 'enRoute', 'arrived', 'washing'].includes(job.status)),
     [state.jobs]
   );
-  const canSeeAvailableJobs = state.availability && state.profileStatus === 'approved';
+  const activeMissionId = state.activeJobId || activeJobs[0]?.id || null;
+  const hasActiveMission = Boolean(activeMissionId);
+  const isApproved = state.profileStatus === 'approved';
+  const canSeeAvailableJobs = state.availability && isApproved;
+  const verificationMeta = isApproved
+    ? { label: 'Compte valide', bg: '#DCFCE7', color: '#166534', border: '#86EFAC' }
+    : state.profileStatus === 'rejected'
+      ? { label: 'Compte refuse', bg: '#FEF2F2', color: '#991B1B', border: '#FECACA' }
+      : { label: 'Verification en attente', bg: '#EFF6FF', color: '#1E3A8A', border: '#BFDBFE' };
 
   const filteredJobs = useMemo(() => {
-    const baseJobs = state.jobs.filter((job) =>
-      canSeeAvailableJobs ? true : job.status !== 'pending'
-    );
+    if (!isApproved) return [];
+    const baseJobs = state.jobs.filter((job) => (canSeeAvailableJobs ? true : job.status !== 'pending'));
     if (filter === 'all') return baseJobs;
     if (filter === 'active') return activeJobs;
     return baseJobs.filter((job) => job.status === filter);
-  }, [filter, state.jobs, activeJobs, canSeeAvailableJobs]);
+  }, [filter, state.jobs, activeJobs, canSeeAvailableJobs, isApproved]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -44,6 +63,17 @@ export default function JobsScreen() {
           <View style={styles.headerIcon}>
             <Ionicons name="options" size={18} color={DriverColors.primary} />
           </View>
+        </View>
+        <View
+          style={[
+            styles.verificationBadge,
+            { backgroundColor: verificationMeta.bg, borderColor: verificationMeta.border },
+          ]}
+        >
+          <Ionicons name="shield-checkmark" size={14} color={verificationMeta.color} />
+          <Text style={[styles.verificationBadgeText, { color: verificationMeta.color }]}>
+            {verificationMeta.label}
+          </Text>
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
@@ -72,14 +102,14 @@ export default function JobsScreen() {
             <Text style={styles.emptyTitle}>
               {!state.availability
                 ? 'Vous etes hors ligne'
-                : state.profileStatus !== 'approved'
+                : !isApproved
                   ? 'Profil non valide'
                   : 'Aucune mission'}
             </Text>
             <Text style={styles.emptyText}>
               {!state.availability
                 ? 'Activez votre disponibilite pour recevoir des demandes.'
-                : state.profileStatus !== 'approved'
+                : !isApproved
                   ? 'Validation du compte requise pour recevoir des demandes.'
                   : 'Revenez plus tard pour de nouvelles demandes.'}
             </Text>
@@ -106,7 +136,24 @@ export default function JobsScreen() {
                   <Text style={styles.cardSubtitle}>{job.service} • {job.vehicle}</Text>
                   </View>
                 </View>
-                <Text style={styles.cardPrice}>{job.price.toLocaleString()} F CFA</Text>
+                <View style={styles.headerRight}>
+                  <Text style={styles.cardPrice}>{job.price.toLocaleString()} F CFA</Text>
+                  <View
+                    style={[
+                      styles.statusBadge,
+                      { backgroundColor: STATUS_META[job.status]?.bg || '#F3F4F6' },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.statusBadgeText,
+                        { color: STATUS_META[job.status]?.color || DriverColors.muted },
+                      ]}
+                    >
+                      {STATUS_META[job.status]?.label || job.status}
+                    </Text>
+                  </View>
+                </View>
               </View>
 
               <View style={styles.cardRow}>
@@ -121,10 +168,13 @@ export default function JobsScreen() {
               {job.status === 'pending' ? (
                 <View style={styles.actionRow}>
                   <TouchableOpacity
-                    style={[styles.actionButton, styles.acceptButton]}
+                    style={[styles.actionButton, styles.acceptButton, hasActiveMission && activeMissionId !== job.id && styles.acceptButtonDisabled]}
                     onPress={() => dispatch({ type: 'ACCEPT_JOB', id: job.id })}
+                    disabled={hasActiveMission && activeMissionId !== job.id}
                   >
-                    <Text style={styles.actionText}>Accepter</Text>
+                    <Text style={styles.actionText}>
+                      {hasActiveMission && activeMissionId !== job.id ? 'Mission en cours' : 'Accepter'}
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.actionButton, styles.declineButton]}
@@ -179,6 +229,21 @@ const styles = StyleSheet.create({
     borderColor: DriverColors.border,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  verificationBadge: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    marginBottom: DriverSpacing.md,
+  },
+  verificationBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   filters: {
     gap: DriverSpacing.sm,
@@ -289,6 +354,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: DriverColors.text,
   },
+  headerRight: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  statusBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  statusBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
   cardRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -317,6 +395,9 @@ const styles = StyleSheet.create({
   },
   acceptButton: {
     backgroundColor: DriverColors.primary,
+  },
+  acceptButtonDisabled: {
+    backgroundColor: '#9CA3AF',
   },
   declineButton: {
     backgroundColor: '#FEE2E2',

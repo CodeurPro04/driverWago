@@ -59,14 +59,14 @@ export default function OnboardingScreen() {
       listRef.current?.scrollToIndex({ index: index + 1, animated: true });
     } else {
       dispatch({ type: 'SET_ONBOARDING_DONE', value: true });
-      router.replace('/account/phone');
+      router.replace('/account/auth');
     }
   };
 
   const handleSecondary = () => {
     if (index === 0) {
       dispatch({ type: 'SET_ONBOARDING_DONE', value: true });
-      router.replace('/account/phone');
+      router.replace('/account/auth');
       return;
     }
 

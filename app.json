@@ -28,6 +28,8 @@
     },
     "plugins": [
       "expo-router",
+      "expo-notifications",
+      "react-native-maps",
       [
         "expo-splash-screen",
         {

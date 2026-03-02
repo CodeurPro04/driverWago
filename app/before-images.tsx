@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+ï»¿import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,7 @@ import { DriverColors, DriverRadius, DriverSpacing } from '@/constants/driverThe
 import { useDriverStore } from '@/hooks/useDriverStore';
 import { transitionJob, uploadJobMedia } from '@/lib/api';
 
-const slots = [0, 1, 2];
+const slots = [0, 1, 2, 3, 4, 5];
 
 export default function BeforeImagesScreen() {
   const router = useRouter();
@@ -38,23 +38,12 @@ export default function BeforeImagesScreen() {
 
   const progress = useMemo(() => photos.filter(Boolean).length, [photos]);
 
-  const pickImage = async (index: number) => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') return;
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      quality: 0.7,
-      allowsEditing: true,
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-    });
-
-    if (result.canceled) return;
-
-    dispatch({ type: 'SET_BEFORE_PHOTO', index, uri: result.assets[0].uri });
+  const uploadPickedImage = async (index: number, uri: string) => {
+    dispatch({ type: 'SET_BEFORE_PHOTO', index, uri });
 
     if (activeJob && state.driverId) {
       setUploadingCount((prev) => prev + 1);
-      uploadJobMedia(activeJob.id, state.driverId, 'before', result.assets[0].uri)
+      uploadJobMedia(activeJob.id, state.driverId, 'before', uri)
         .then(async () => {
           await refreshJobsNow(state.driverId || undefined);
         })
@@ -67,8 +56,44 @@ export default function BeforeImagesScreen() {
     }
   };
 
+  const pickFromGallery = async (index: number) => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') return;
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      quality: 0.7,
+      allowsEditing: true,
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    });
+
+    if (result.canceled) return;
+    await uploadPickedImage(index, result.assets[0].uri);
+  };
+
+  const pickFromCamera = async (index: number) => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') return;
+
+    const result = await ImagePicker.launchCameraAsync({
+      quality: 0.7,
+      allowsEditing: true,
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    });
+
+    if (result.canceled) return;
+    await uploadPickedImage(index, result.assets[0].uri);
+  };
+
+  const pickImage = (index: number) => {
+    Alert.alert('Ajouter une photo', 'Choisissez la source de la photo', [
+      { text: 'CamÃ©ra', onPress: () => pickFromCamera(index).catch(() => undefined) },
+      { text: 'Galerie', onPress: () => pickFromGallery(index).catch(() => undefined) },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
+  };
+
   const onStartWash = async () => {
-    if (progress < 2 || !activeJob || !state.driverId) return;
+    if (progress < 6 || !activeJob || !state.driverId) return;
 
     setSubmitting(true);
     try {
@@ -85,7 +110,7 @@ export default function BeforeImagesScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Téléchargez des photos montrant la voiture avant le lavage</Text>
+        <Text style={styles.title}>Ajoutez 6 photos du vehicule avant le lavage (camera ou galerie)</Text>
 
         <View style={styles.grid}>
           {slots.map((slot) => {
@@ -93,8 +118,13 @@ export default function BeforeImagesScreen() {
             return (
               <TouchableOpacity key={slot} style={styles.photoCard} onPress={() => pickImage(slot)}>
                 {uri ? <Image source={{ uri }} style={styles.photo} /> : null}
+                <View style={[styles.slotBadge, uri && styles.slotBadgeFilled]}>
+                  <Text style={[styles.slotBadgeText, uri && styles.slotBadgeTextFilled]}>
+                    {slot + 1}/6
+                  </Text>
+                </View>
                 <View style={styles.refreshIcon}>
-                  <Ionicons name="refresh" size={16} color={DriverColors.primary} />
+                  <Ionicons name="camera" size={16} color={DriverColors.primary} />
                 </View>
               </TouchableOpacity>
             );
@@ -103,14 +133,14 @@ export default function BeforeImagesScreen() {
 
         <View style={styles.progressRow}>
           <View style={styles.progressBadge}>
-            <Text style={styles.progressText}>{Math.min(2, progress)}/2</Text>
+            <Text style={styles.progressText}>{Math.min(6, progress)}/6</Text>
           </View>
-          <Text style={styles.progressHint}>Ajoutez 2 photos claires montrant l'état du véhicule avant le lavage.</Text>
+          <Text style={styles.progressHint}>Ajoutez 6 photos claires montrant l etat du vehicule avant le lavage.</Text>
         </View>
 
         <TouchableOpacity
-          style={[styles.primaryButton, (progress < 2 || uploadingCount > 0 || submitting) && styles.primaryButtonDisabled]}
-          disabled={progress < 2 || uploadingCount > 0 || submitting}
+          style={[styles.primaryButton, (progress < 6 || uploadingCount > 0 || submitting) && styles.primaryButtonDisabled]}
+          disabled={progress < 6 || uploadingCount > 0 || submitting}
           onPress={onStartWash}
         >
           {submitting ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={styles.primaryText}>Commencer le lavage</Text>}
@@ -157,14 +187,37 @@ const styles = StyleSheet.create({
   refreshIcon: {
     alignSelf: 'flex-end',
     margin: 10,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: DriverColors.border,
+  },
+  slotBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderWidth: 1,
+    borderColor: DriverColors.border,
+  },
+  slotBadgeFilled: {
+    backgroundColor: 'rgba(34,197,94,0.95)',
+    borderColor: '#22C55E',
+  },
+  slotBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: DriverColors.text,
+  },
+  slotBadgeTextFilled: {
+    color: '#FFFFFF',
   },
   progressRow: {
     flexDirection: 'row',
@@ -173,9 +226,9 @@ const styles = StyleSheet.create({
     marginTop: DriverSpacing.lg,
   },
   progressBadge: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 2,
     borderColor: DriverColors.primary,
     alignItems: 'center',

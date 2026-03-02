@@ -12,13 +12,19 @@ export default function RootLayout() {
   return (
     <DriverProvider>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: '#FFFFFF' },
+          }}
+        >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="earnings-history" options={{ headerShown: false }} />
           <Stack.Screen name="job-details" options={{ headerShown: false }} />
           <Stack.Screen name="notifications" options={{ headerShown: false }} />
           <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-          <Stack.Screen name="account/phone" options={{ headerShown: false }} />
-          <Stack.Screen name="account/otp" options={{ headerShown: false }} />
+          <Stack.Screen name="account/auth" options={{ headerShown: false }} />
+          <Stack.Screen name="account/callback" options={{ headerShown: false }} />
           <Stack.Screen name="account/profile" options={{ headerShown: false }} />
           <Stack.Screen name="account/location" options={{ headerShown: false }} />
           <Stack.Screen name="account/legal" options={{ headerShown: false }} />

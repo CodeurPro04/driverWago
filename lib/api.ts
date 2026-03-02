@@ -1,5 +1,17 @@
 import Constants from 'expo-constants';
 
+export class ApiError extends Error {
+  status: number;
+  details: unknown;
+
+  constructor(message: string, status: number, details?: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.details = details;
+  }
+}
+
 const resolveApiBaseUrl = () => {
   const explicit = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
   if (explicit) return explicit.replace(/\/$/, '');
@@ -87,7 +99,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data?.message || `Erreur API (${response.status})`);
+    throw new ApiError(data?.message || `Erreur API (${response.status})`, response.status, data);
   }
   return data as T;
 }
@@ -126,6 +138,95 @@ export async function mobileLogin(payload: {
     body: JSON.stringify(payload),
   });
   return { ...response, user: normalizeUser(response.user) };
+}
+
+type AuthProvider = 'phone' | 'email' | 'google' | 'apple';
+type AuthSession = {
+  user: {
+    id: number;
+    name: string;
+    first_name?: string | null;
+    last_name?: string | null;
+    phone: string;
+    email?: string | null;
+    role: 'customer' | 'driver';
+    wallet_balance: number;
+    is_available: boolean;
+    bio?: string | null;
+    avatar_url?: string | null;
+    membership?: string | null;
+    rating?: number;
+    profile_status?: string;
+    account_step?: number;
+    documents?: Record<string, string | null>;
+    documents_status?: 'pending' | 'submitted' | 'approved' | 'rejected';
+  };
+  token?: string | null;
+  provider: AuthProvider;
+  is_new_user?: boolean;
+};
+
+const normalizeAuthSession = (raw: any, provider: AuthProvider): AuthSession => {
+  const token = raw?.token || raw?.access_token || raw?.auth_token || null;
+  return {
+    user: normalizeUser(raw?.user || raw),
+    token,
+    provider,
+    is_new_user: Boolean(raw?.is_new_user),
+  };
+};
+
+export async function registerWithEmail(payload: {
+  first_name: string;
+  last_name: string;
+  email: string;
+  password: string;
+  phone?: string;
+  role?: 'customer' | 'driver';
+}) {
+  const response = await apiRequest<any>('/auth/email/register', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return normalizeAuthSession(response, 'email');
+}
+
+export async function loginWithEmail(payload: {
+  email: string;
+  password: string;
+  role?: 'customer' | 'driver';
+}) {
+  const response = await apiRequest<any>('/auth/email/login', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return normalizeAuthSession(response, 'email');
+}
+
+export function buildOAuthStartUrl(provider: 'google' | 'apple', redirectUri: string, state: string) {
+  const params = new URLSearchParams({
+    provider,
+    redirect_uri: redirectUri,
+    state,
+    platform: 'mobile',
+    role: 'driver',
+  });
+  return `${API_BASE_URL}/auth/oauth/start?${params.toString()}`;
+}
+
+export async function completeOAuth(payload: {
+  provider: 'google' | 'apple';
+  code?: string | null;
+  id_token?: string | null;
+  access_token?: string | null;
+  redirect_uri: string;
+  state?: string | null;
+}) {
+  const response = await apiRequest<any>('/auth/oauth/mobile-complete', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return normalizeAuthSession(response, payload.provider);
 }
 
 export async function getDriverJobs(driverId: number) {
@@ -194,14 +295,6 @@ export async function updateUserProfile(
   return { ...response, user: normalizeUser(response.user) };
 }
 
-export async function approveDriverProfile(driverId: number) {
-  const response = await apiRequest<{ user: any; stats: Record<string, number> }>(`/drivers/${driverId}/approve`, {
-    method: 'POST',
-    body: JSON.stringify({ approved: true }),
-  });
-  return { ...response, user: normalizeUser(response.user) };
-}
-
 export async function uploadUserAvatar(userId: number, uri: string) {
   const form = new FormData();
   form.append('avatar', {
@@ -265,6 +358,85 @@ export async function submitDriverDocuments(driverId: number) {
     body: JSON.stringify({}),
   });
   return { ...response, user: normalizeUser(response.user) };
+}
+
+export async function getDriverNotifications(driverId: number) {
+  return apiRequest<{
+    notifications: Array<{
+      id: number;
+      type: 'earning' | 'deposit' | 'withdrawal' | 'system';
+      title: string;
+      body: string;
+      data?: Record<string, unknown>;
+      read_at?: string | null;
+      created_at: string;
+    }>;
+    unread_count: number;
+  }>(`/drivers/${driverId}/notifications`);
+}
+
+export async function markDriverNotificationRead(driverId: number, notificationId: string) {
+  return apiRequest(`/drivers/${driverId}/notifications/${notificationId}/read`, {
+    method: 'PATCH',
+    body: JSON.stringify({}),
+  });
+}
+
+export async function markAllDriverNotificationsRead(driverId: number) {
+  return apiRequest(`/drivers/${driverId}/notifications/read-all`, {
+    method: 'PATCH',
+    body: JSON.stringify({}),
+  });
+}
+
+export async function clearDriverNotifications(driverId: number) {
+  return apiRequest(`/drivers/${driverId}/notifications`, {
+    method: 'DELETE',
+  });
+}
+
+export async function getDriverWalletTransactions(driverId: number) {
+  return apiRequest<{
+    balance: number;
+    transactions: Array<{
+      id: number;
+      type: 'earning' | 'deposit' | 'withdrawal';
+      amount: number;
+      method?: string | null;
+      meta?: Record<string, unknown>;
+      created_at: string;
+    }>;
+  }>(`/drivers/${driverId}/wallet/transactions`);
+}
+
+export async function createDriverWalletTransaction(
+  driverId: number,
+  payload: { type: 'deposit' | 'withdrawal'; amount: number; method?: string }
+) {
+  return apiRequest<{
+    balance: number;
+    transaction: {
+      id: number;
+      type: 'earning' | 'deposit' | 'withdrawal';
+      amount: number;
+      method?: string | null;
+      meta?: Record<string, unknown>;
+      created_at: string;
+    };
+  }>(`/drivers/${driverId}/wallet/transactions`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function registerDriverDevice(
+  driverId: number,
+  payload: { expo_push_token?: string | null; app_version?: string | null }
+) {
+  return apiRequest<{ ok: boolean; latest_version?: string | null }>(`/drivers/${driverId}/device`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export { API_BASE_URL };

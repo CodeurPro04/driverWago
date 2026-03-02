@@ -3,8 +3,8 @@ import { Redirect, useRootNavigationState } from 'expo-router';
 import { useDriverStore } from '@/hooks/useDriverStore';
 
 const stepRoutes: Record<number, string> = {
-  0: '/account/phone',
-  1: '/account/otp',
+  0: '/account/profile',
+  1: '/account/profile',
   2: '/account/profile',
   3: '/account/location',
   4: '/account/legal',
@@ -26,11 +26,15 @@ export default function Index() {
     return <Redirect href="/onboarding" />;
   }
 
-  if (state.accountStep < 6) {
-    return <Redirect href={(stepRoutes[state.accountStep] || '/account/phone') as any} />;
+  if (!state.driverId) {
+    return <Redirect href="/account/auth" />;
   }
 
-  if (state.profileStatus !== 'approved') {
+  if (state.accountStep < 6) {
+    return <Redirect href={(stepRoutes[state.accountStep] || '/account/auth') as any} />;
+  }
+
+  if (state.profileStatus === 'rejected') {
     return <Redirect href="/account/review" />;
   }
 
