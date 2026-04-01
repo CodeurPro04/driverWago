@@ -5,9 +5,11 @@ import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { DriverProvider } from '@/hooks/useDriverStore';
+import { getDriverPalette } from '@/lib/driverAppearance';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  const palette = getDriverPalette(colorScheme);
 
   return (
     <DriverProvider>
@@ -15,7 +17,7 @@ export default function RootLayout() {
         <Stack
           screenOptions={{
             headerShown: false,
-            contentStyle: { backgroundColor: '#FFFFFF' },
+            contentStyle: { backgroundColor: palette.background },
           }}
         >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -29,12 +31,13 @@ export default function RootLayout() {
           <Stack.Screen name="account/location" options={{ headerShown: false }} />
           <Stack.Screen name="account/legal" options={{ headerShown: false }} />
           <Stack.Screen name="account/documents" options={{ headerShown: false }} />
+          <Stack.Screen name="account/pricing" options={{ headerShown: false }} />
           <Stack.Screen name="account/review" options={{ headerShown: false }} />
           <Stack.Screen name="before-images" options={{ headerShown: false }} />
           <Stack.Screen name="after-images" options={{ headerShown: false }} />
           <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
         </Stack>
-        <StatusBar style="auto" />
+        <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
       </ThemeProvider>
     </DriverProvider>
   );

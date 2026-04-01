@@ -3,7 +3,9 @@ import { Redirect, useRootNavigationState } from 'expo-router';
 import { ActivityIndicator, Alert, Platform, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useDriverStore } from '@/hooks/useDriverStore';
 import { DriverColors, DriverRadius, DriverSpacing } from '@/constants/driverTheme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { authenticateWithBiometrics, canUseFaceId, getBiometricLabel } from '@/lib/biometrics';
+import { getDriverPalette } from '@/lib/driverAppearance';
 
 const stepRoutes: Record<number, string> = {
   0: '/account/profile',
@@ -12,7 +14,7 @@ const stepRoutes: Record<number, string> = {
   3: '/account/location',
   4: '/account/legal',
   5: '/account/documents',
-  6: '/account/review',
+  6: '/account/pricing',
   7: '/account/review',
   8: '/(tabs)',
 };
@@ -22,8 +24,54 @@ export default function Index() {
   const { state, hydrated } = useDriverStore();
   const [unlocking, setUnlocking] = useState(false);
   const [biometricUnlocked, setBiometricUnlocked] = useState(false);
+  const palette = getDriverPalette(useColorScheme());
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: palette.background,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: DriverSpacing.lg,
+    },
+    card: {
+      width: '100%',
+      backgroundColor: palette.surface,
+      borderWidth: 1,
+      borderColor: palette.border,
+      borderRadius: DriverRadius.md,
+      padding: DriverSpacing.lg,
+      gap: DriverSpacing.md,
+    },
+    title: {
+      fontSize: 20,
+      fontWeight: '800',
+      color: palette.text,
+      textAlign: 'center',
+    },
+    subtitle: {
+      fontSize: 13,
+      lineHeight: 20,
+      color: palette.textMuted,
+      textAlign: 'center',
+    },
+    button: {
+      height: 48,
+      borderRadius: DriverRadius.md,
+      backgroundColor: DriverColors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    buttonDisabled: {
+      opacity: 0.7,
+    },
+    buttonText: {
+      color: '#FFFFFF',
+      fontSize: 15,
+      fontWeight: '700',
+    },
+  });
   const canEnterMainApp =
-    state.profileStatus === 'approved' || (state.accountStep >= 6 && state.documentsStatus === 'submitted');
+    state.profileStatus === 'approved' || (state.accountStep >= 7 && state.documentsStatus === 'submitted');
   const isLoggedIn = useMemo(() => Boolean(state.driverId), [state.driverId]);
 
   if (!rootNavigationState?.key || !hydrated) {
@@ -76,7 +124,7 @@ export default function Index() {
     return <Redirect href="/account/auth" />;
   }
 
-  if (state.accountStep < 6) {
+  if (state.accountStep < 7) {
     return <Redirect href={(stepRoutes[state.accountStep] || '/account/auth') as any} />;
   }
 
@@ -86,49 +134,3 @@ export default function Index() {
 
   return <Redirect href="/(tabs)" />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: DriverColors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: DriverSpacing.lg,
-  },
-  card: {
-    width: '100%',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: DriverColors.border,
-    borderRadius: DriverRadius.md,
-    padding: DriverSpacing.lg,
-    gap: DriverSpacing.md,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: DriverColors.text,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 13,
-    lineHeight: 20,
-    color: DriverColors.muted,
-    textAlign: 'center',
-  },
-  button: {
-    height: 48,
-    borderRadius: DriverRadius.md,
-    backgroundColor: DriverColors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-});

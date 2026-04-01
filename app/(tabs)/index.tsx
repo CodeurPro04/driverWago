@@ -11,12 +11,15 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { DriverColors, DriverRadius, DriverSpacing, DriverTypography } from '@/constants/driverTheme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
 import { useScreenRefresh } from '@/hooks/useScreenRefresh';
+import { getDriverPalette } from '@/lib/driverAppearance';
 
 export default function DashboardScreen() {
   const router = useRouter();
   const { state, dispatch } = useDriverStore();
+  const palette = getDriverPalette(useColorScheme());
   useScreenRefresh({ jobs: true, intervalMs: 15000 });
   const unreadCount = useMemo(() => state.notifications.filter((item) => !item.read).length, [state.notifications]);
 
@@ -33,15 +36,15 @@ export default function DashboardScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: palette.background }]}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <View style={styles.statusPill}>
+          <View style={[styles.statusPill, { backgroundColor: palette.surfaceMuted }]}>
             <TouchableOpacity
               style={[styles.statusOption, !state.availability && styles.statusOptionActive]}
               onPress={() => state.availability && dispatch({ type: 'TOGGLE_AVAILABILITY' })}
             >
-              <Text style={[styles.statusText, !state.availability && styles.statusTextActive]}>
+              <Text style={[styles.statusText, { color: palette.textMuted }, !state.availability && styles.statusTextActive]}>
                 Hors ligne
               </Text>
             </TouchableOpacity>
@@ -49,12 +52,12 @@ export default function DashboardScreen() {
               style={[styles.statusOption, state.availability && styles.statusOptionActive]}
               onPress={() => !state.availability && dispatch({ type: 'TOGGLE_AVAILABILITY' })}
             >
-              <Text style={[styles.statusText, state.availability && styles.statusTextActive]}>
+              <Text style={[styles.statusText, { color: palette.textMuted }, state.availability && styles.statusTextActive]}>
                 En ligne
               </Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.notificationButton} onPress={() => router.push('/notifications')}>
+          <TouchableOpacity style={[styles.notificationButton, { backgroundColor: palette.iconButton }]} onPress={() => router.push('/notifications')}>
             <Ionicons name="notifications-outline" size={20} color={DriverColors.primary} />
             {unreadCount > 0 ? (
               <View style={styles.badge}>
@@ -65,42 +68,42 @@ export default function DashboardScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Aperçu du jour</Text>
-          <View style={styles.overviewCard}>
+          <Text style={[styles.sectionTitle, { color: palette.text }]}>Aperçu du jour</Text>
+          <View style={[styles.overviewCard, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
             <View style={styles.overviewItem}>
-              <Text style={styles.overviewValue}>{visiblePendingJobs.length}</Text>
-              <Text style={styles.overviewLabel}>Commandes</Text>
+              <Text style={[styles.overviewValue, { color: palette.text }]}>{visiblePendingJobs.length}</Text>
+              <Text style={[styles.overviewLabel, { color: palette.textMuted }]}>Commandes</Text>
             </View>
-            <View style={styles.overviewDivider} />
+            <View style={[styles.overviewDivider, { backgroundColor: palette.border }]} />
             <View style={styles.overviewItem}>
-              <Text style={styles.overviewValue}>{todayEarnings.toLocaleString()} F CFA</Text>
-              <Text style={styles.overviewLabel}>Gain net</Text>
+              <Text style={[styles.overviewValue, { color: palette.text }]}>{todayEarnings.toLocaleString()} F CFA</Text>
+              <Text style={[styles.overviewLabel, { color: palette.textMuted }]}>Gain net</Text>
             </View>
-            <View style={styles.overviewDivider} />
+            <View style={[styles.overviewDivider, { backgroundColor: palette.border }]} />
             <View style={styles.overviewItem}>
-              <Text style={styles.overviewValue}>{state.rating.toFixed(1)}</Text>
-              <Text style={styles.overviewLabel}>Évaluation</Text>
+              <Text style={[styles.overviewValue, { color: palette.text }]}>{state.rating.toFixed(1)}</Text>
+              <Text style={[styles.overviewLabel, { color: palette.textMuted }]}>Évaluation</Text>
             </View>
           </View>
         </View>
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Demandes disponibles</Text>
+            <Text style={[styles.sectionTitle, { color: palette.text }]}>Demandes disponibles</Text>
             <TouchableOpacity onPress={() => router.push('/(tabs)/jobs')}>
               <Text style={styles.linkText}>Tout voir</Text>
             </TouchableOpacity>
           </View>
           {visiblePendingJobs.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyTitle}>
+            <View style={[styles.emptyCard, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
+              <Text style={[styles.emptyTitle, { color: palette.text }]}>
                 {!state.availability
                   ? 'Vous etes hors ligne'
                   : state.profileStatus !== 'approved'
                     ? 'Profil non valide'
                     : "Aucune demande pour l'instant"}
               </Text>
-              <Text style={styles.emptyText}>
+              <Text style={[styles.emptyText, { color: palette.textMuted }]}>
                 {!state.availability
                   ? 'Passez en ligne pour voir les demandes disponibles.'
                   : state.profileStatus !== 'approved'
@@ -112,7 +115,7 @@ export default function DashboardScreen() {
             visiblePendingJobs.map((job) => (
               <TouchableOpacity
                 key={job.id}
-                style={styles.requestCard}
+                style={[styles.requestCard, { backgroundColor: palette.surface, borderColor: palette.border }]}
                 activeOpacity={0.9}
                 onPress={() => router.push({ pathname: '/job-details', params: { id: job.id } })}
               >
@@ -122,40 +125,41 @@ export default function DashboardScreen() {
                       <Image source={{ uri: job.customerAvatarUrl }} style={styles.avatarImage} />
                     ) : (
                       <View style={styles.avatar}>
-                        <Text style={styles.avatarText}>{job.customerName.charAt(0)}</Text>
+                        <Text style={[styles.avatarText, { color: palette.text }]}>{job.customerName.charAt(0)}</Text>
                       </View>
                     )}
                     <View>
-                      <Text style={styles.requestName}>{job.customerName}</Text>
-                      <View style={styles.ratingRow}>
-                        <Ionicons name="star" size={12} color={DriverColors.accent} />
-                        <Text style={styles.ratingText}>{state.rating.toFixed(1)}</Text>
-                      </View>
+                      <Text style={[styles.requestName, { color: palette.text }]}>{job.customerName}</Text>
+                      <Text style={[styles.requestMeta, { color: palette.textMuted }]}>Demande immédiate</Text>
                     </View>
                   </View>
                   <View style={styles.requestPriceWrap}>
                     <Text style={styles.requestPrice}>{job.price.toLocaleString()} F CFA</Text>
-                    <Text style={styles.requestMeta}>Demande immédiate</Text>
+                    <Text style={[styles.requestMeta, { color: palette.textMuted }]}>{job.service}</Text>
                   </View>
                 </View>
 
                 <View style={styles.requestRow}>
                   <Ionicons name="car" size={14} color={DriverColors.primary} />
-                  <Text style={styles.requestRowText}>{job.vehicle}</Text>
+                  <Text style={[styles.requestRowText, { color: palette.text }]}>{job.vehicle}</Text>
                 </View>
                 <View style={styles.requestRow}>
                   <Ionicons name="sparkles" size={14} color={DriverColors.primary} />
-                  <Text style={styles.requestRowText}>{job.service}</Text>
+                  <Text style={[styles.requestRowText, { color: palette.text }]}>{job.service}</Text>
                 </View>
                 <View style={styles.requestRow}>
                   <Ionicons name="location" size={14} color={DriverColors.primary} />
-                  <Text style={styles.requestRowText} numberOfLines={2}>
+                  <Text style={[styles.requestRowText, { color: palette.text }]} numberOfLines={2}>
                     {job.address}
                   </Text>
                 </View>
                 <View style={styles.requestFooter}>
-                  <Text style={styles.requestDistance}>À {job.distanceKm.toFixed(1)} km</Text>
-                  <Text style={styles.requestDistance}>{job.etaMin} min</Text>
+                  <Text style={[styles.requestDistance, { color: palette.textMuted }]}>
+                    À {typeof job.distanceKm === 'number' && Number.isFinite(job.distanceKm) ? job.distanceKm.toFixed(1) : '2.5'} km
+                  </Text>
+                  <Text style={[styles.requestDistance, { color: palette.textMuted }]}>
+                    {typeof job.etaMin === 'number' && Number.isFinite(job.etaMin) ? job.etaMin : 12} min
+                  </Text>
                 </View>
               </TouchableOpacity>
             ))
@@ -336,16 +340,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: DriverColors.text,
-  },
-  ratingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
-  ratingText: {
-    fontSize: 11,
-    color: DriverColors.muted,
   },
   requestPriceWrap: {
     alignItems: 'flex-end',

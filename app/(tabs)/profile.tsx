@@ -17,9 +17,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { DriverColors, DriverRadius, DriverSpacing, DriverTypography } from '@/constants/driverTheme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
 import { ApiError, getUserProfile, updateUserProfile, uploadUserAvatar } from '@/lib/api';
+import { driverVehicleLabels, driverWashLabels, getDriverDocumentItems } from '@/lib/driverAccount';
 import { authenticateWithBiometrics, canUseBiometrics, canUseFaceId, getBiometricLabel } from '@/lib/biometrics';
+import { getDriverPalette } from '@/lib/driverAppearance';
 
 type ProfileTab = 'overview' | 'verification' | 'activity' | 'settings' | 'security';
 
@@ -37,16 +40,28 @@ const DOC_LABELS: Record<string, string> = {
   license: 'Permis de conduire',
   address: 'Justificatif de domicile',
   certificate: 'Certificat de bonne conduite',
+  trade_register: 'Registre du commerce',
+  manager_id: 'Piece d identite du gerant',
+  manager_photo: 'Photo du gerant',
 };
 
 export default function ProfileScreen() {
   const router = useRouter();
   const { state, dispatch } = useDriverStore();
+  const palette = getDriverPalette(useColorScheme());
   const [activeTab, setActiveTab] = useState<ProfileTab>('overview');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState('');
-  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', phone: '', bio: '' });
+  const [form, setForm] = useState({
+    firstName: '',
+    lastName: '',
+    companyName: '',
+    managerName: '',
+    email: '',
+    phone: '',
+    bio: '',
+  });
 
   const loadProfile = async () => {
     const driverId = state.driverId;
@@ -57,23 +72,29 @@ export default function ProfileScreen() {
       setForm({
         firstName: profile.user.first_name || '',
         lastName: profile.user.last_name || '',
+        companyName: profile.user.company_name || '',
+        managerName: profile.user.manager_name || '',
         email: profile.user.email || '',
         phone: profile.user.phone || '',
         bio: profile.user.bio || '',
       });
       setAvatarUrl(profile.user.avatar_url || '');
-      dispatch({ type: 'SET_DRIVER_NAME', value: profile.user.first_name || profile.user.name || 'Laveur' });
+      dispatch({ type: 'SET_DRIVER_NAME', value: profile.user.company_name || profile.user.first_name || profile.user.name || 'Laveur' });
       dispatch({
         type: 'SET_DRIVER_SESSION',
         value: {
           id: profile.user.id,
-          name: profile.user.first_name || profile.user.name || 'Laveur',
+          name: profile.user.company_name || profile.user.first_name || profile.user.name || 'Laveur',
           phone: profile.user.phone || '',
           isAvailable: Boolean(profile.user.is_available),
+          accountType: profile.user.driver_account_type || state.driverAccountType,
+          companyName: profile.user.company_name || '',
+          managerName: profile.user.manager_name || '',
           accountStep: Number(profile.user.account_step || 0),
           profileStatus: (profile.user.profile_status || 'pending') as 'pending' | 'approved' | 'rejected',
           documents: (profile.user.documents as Record<string, string | null>) || {},
           documentsStatus: (profile.user.documents_status || 'pending') as 'pending' | 'submitted' | 'approved' | 'rejected',
+          pricing: profile.user.pricing || state.pricing,
           rating: Number(profile.user.rating ?? 0),
         },
       });
@@ -107,25 +128,31 @@ export default function ProfileScreen() {
     setSaving(true);
     try {
       const updated = await updateUserProfile(state.driverId, {
-        first_name: form.firstName,
-        last_name: form.lastName,
+        first_name: state.driverAccountType === 'company' ? '' : form.firstName,
+        last_name: state.driverAccountType === 'company' ? '' : form.lastName,
+        company_name: state.driverAccountType === 'company' ? form.companyName : '',
+        manager_name: state.driverAccountType === 'company' ? form.managerName : '',
         email: form.email,
         phone: form.phone,
         bio: form.bio,
         is_available: state.availability,
       });
-      dispatch({ type: 'SET_DRIVER_NAME', value: updated.user.first_name || updated.user.name || 'Laveur' });
+      dispatch({ type: 'SET_DRIVER_NAME', value: updated.user.company_name || updated.user.first_name || updated.user.name || 'Laveur' });
       dispatch({
         type: 'SET_DRIVER_SESSION',
         value: {
           id: state.driverId,
-          name: updated.user.first_name || updated.user.name || 'Laveur',
+          name: updated.user.company_name || updated.user.first_name || updated.user.name || 'Laveur',
           phone: updated.user.phone || state.driverPhone || '',
           isAvailable: state.availability,
+          accountType: updated.user.driver_account_type || state.driverAccountType,
+          companyName: updated.user.company_name || state.companyName,
+          managerName: updated.user.manager_name || state.managerName,
           accountStep: updated.user.account_step ?? state.accountStep,
           profileStatus: (updated.user.profile_status || state.profileStatus) as 'pending' | 'approved' | 'rejected',
           documents: (updated.user.documents as Record<string, string | null>) || state.documents,
           documentsStatus: (updated.user.documents_status || state.documentsStatus) as 'pending' | 'submitted' | 'approved' | 'rejected',
+          pricing: updated.user.pricing || state.pricing,
           rating: Number(updated.user.rating ?? state.rating ?? 0),
         },
       });
@@ -233,56 +260,103 @@ export default function ProfileScreen() {
   }, [state.profileStatus]);
 
   const completedJobs = useMemo(() => state.jobs.filter((job) => job.status === 'completed'), [state.jobs]);
-  const uploadedDocsCount = useMemo(() => Object.values(state.documents || {}).filter(Boolean).length, [state.documents]);
-  const totalDocs = 5;
+  const isCompany = state.driverAccountType === 'company';
+  const requiredDocuments = useMemo(() => getDriverDocumentItems(state.driverAccountType), [state.driverAccountType]);
+  const uploadedDocsCount = useMemo(
+    () => requiredDocuments.filter((doc) => Boolean(state.documents?.[doc.id])).length,
+    [requiredDocuments, state.documents]
+  );
+  const totalDocs = requiredDocuments.length;
+  const pricingRows = useMemo(
+    () =>
+      Object.entries(state.pricing || {}).map(([vehicle, services]) => ({
+        vehicle,
+        services: Object.entries(services || {}),
+      })),
+    [state.pricing]
+  );
   const visibleTabs = useMemo(
     () => (state.profileStatus === 'approved' ? TABS.filter((tab) => tab.id !== 'verification') : TABS),
     [state.profileStatus]
   );
+  const themed = {
+    container: { backgroundColor: palette.background },
+    title: { color: palette.text },
+    headerIcon: { backgroundColor: palette.iconButton, borderColor: palette.border },
+    tabChip: { backgroundColor: palette.surfaceAlt, borderColor: palette.border },
+    tabText: { color: palette.textMuted },
+    card: { backgroundColor: palette.surface, borderColor: palette.border },
+    subtleCard: { backgroundColor: palette.surfaceAlt, borderColor: palette.border },
+    input: { backgroundColor: palette.input, borderColor: palette.border, color: palette.text },
+    primaryText: { color: palette.text },
+    mutedText: { color: palette.textMuted },
+    softDivider: { borderColor: palette.border },
+    track: { backgroundColor: palette.border },
+    secondaryButton: { backgroundColor: palette.surfaceAlt, borderColor: palette.border },
+    availabilityButton: { backgroundColor: palette.surface, borderColor: palette.border },
+    disabledButton: { backgroundColor: palette.surfaceMuted },
+  };
 
   const renderOverview = () => (
     <>
-      <View style={styles.profileCard}>
+      <View style={[styles.profileCard, themed.card]}>
         <TouchableOpacity style={styles.avatar} onPress={onPickAvatar}>
           {avatarUrl ? (
             <Image source={{ uri: avatarUrl }} style={styles.avatarImage} onError={() => setAvatarUrl('')} />
           ) : (
-            <Text style={styles.avatarText}>{(form.firstName || state.driverName || 'L').charAt(0).toUpperCase()}</Text>
+            <Text style={styles.avatarText}>
+              {(isCompany ? form.companyName || state.companyName : form.firstName || state.driverName || 'L').charAt(0).toUpperCase()}
+            </Text>
           )}
         </TouchableOpacity>
         <View style={styles.profileInfo}>
-          <Text style={styles.profileName}>{`${form.firstName} ${form.lastName}`.trim() || state.driverName}</Text>
-          <Text style={styles.profileMeta}>Statut compte: {profileStatusLabel}</Text>
-          <Text style={styles.profileMeta}>Disponibilite: {state.availability ? 'En ligne' : 'Hors ligne'}</Text>
+          <Text style={[styles.profileName, themed.primaryText]}>
+            {isCompany
+              ? form.companyName.trim() || state.companyName || state.driverName
+              : `${form.firstName} ${form.lastName}`.trim() || state.driverName}
+          </Text>
+          <Text style={[styles.profileMeta, themed.mutedText]}>Statut compte: {profileStatusLabel}</Text>
+          <Text style={[styles.profileMeta, themed.mutedText]}>Type de compte: {isCompany ? 'Entreprise' : 'Laveur independant'}</Text>
+          {isCompany ? <Text style={[styles.profileMeta, themed.mutedText]}>Gerant: {form.managerName.trim() || state.managerName || '-'}</Text> : null}
+          <Text style={[styles.profileMeta, themed.mutedText]}>Disponibilite: {state.availability ? 'En ligne' : 'Hors ligne'}</Text>
         </View>
       </View>
 
       <View style={styles.statsRow}>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{state.jobs.length}</Text>
-          <Text style={styles.statLabel}>Missions</Text>
+        <View style={[styles.statCard, themed.card]}>
+          <Text style={[styles.statValue, themed.primaryText]}>{state.jobs.length}</Text>
+          <Text style={[styles.statLabel, themed.mutedText]}>Missions</Text>
         </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{state.cashoutBalance.toLocaleString()}</Text>
-          <Text style={styles.statLabel}>Solde</Text>
+        <View style={[styles.statCard, themed.card]}>
+          <Text style={[styles.statValue, themed.primaryText]}>{state.cashoutBalance.toLocaleString()}</Text>
+          <Text style={[styles.statLabel, themed.mutedText]}>Solde</Text>
         </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{state.rating.toFixed(1)}</Text>
-          <Text style={styles.statLabel}>{state.reviewsCount > 0 ? `Note (${state.reviewsCount} avis)` : 'Note'}</Text>
+        <View style={[styles.statCard, themed.card]}>
+          <Text style={[styles.statValue, themed.primaryText]}>{state.rating.toFixed(1)}</Text>
+          <Text style={[styles.statLabel, themed.mutedText]}>{state.reviewsCount > 0 ? `Note (${state.reviewsCount} avis)` : 'Note'}</Text>
         </View>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Informations personnelles</Text>
-        <TextInput style={styles.input} placeholder="Prenom" value={form.firstName} onChangeText={(v) => setForm((p) => ({ ...p, firstName: v }))} />
-        <TextInput style={styles.input} placeholder="Nom" value={form.lastName} onChangeText={(v) => setForm((p) => ({ ...p, lastName: v }))} />
-        <TextInput style={styles.input} placeholder="Telephone" value={form.phone} keyboardType="phone-pad" onChangeText={(v) => setForm((p) => ({ ...p, phone: v }))} />
-        <TextInput style={styles.input} placeholder="Email" value={form.email} onChangeText={(v) => setForm((p) => ({ ...p, email: v }))} />
-        <TextInput style={styles.bioInput} placeholder="Bio" value={form.bio} multiline onChangeText={(v) => setForm((p) => ({ ...p, bio: v }))} />
+      <View style={[styles.card, themed.card]}>
+        <Text style={[styles.sectionTitle, themed.primaryText]}>{isCompany ? 'Informations entreprise' : 'Informations personnelles'}</Text>
+        {isCompany ? (
+          <>
+            <TextInput style={[styles.input, themed.input]} placeholder="Nom de l entreprise" placeholderTextColor={palette.textMuted} value={form.companyName} onChangeText={(v) => setForm((p) => ({ ...p, companyName: v }))} />
+            <TextInput style={[styles.input, themed.input]} placeholder="Nom du gerant" placeholderTextColor={palette.textMuted} value={form.managerName} onChangeText={(v) => setForm((p) => ({ ...p, managerName: v }))} />
+          </>
+        ) : (
+          <>
+            <TextInput style={[styles.input, themed.input]} placeholder="Prenom" placeholderTextColor={palette.textMuted} value={form.firstName} onChangeText={(v) => setForm((p) => ({ ...p, firstName: v }))} />
+            <TextInput style={[styles.input, themed.input]} placeholder="Nom" placeholderTextColor={palette.textMuted} value={form.lastName} onChangeText={(v) => setForm((p) => ({ ...p, lastName: v }))} />
+          </>
+        )}
+        <TextInput style={[styles.input, themed.input]} placeholder="Telephone" placeholderTextColor={palette.textMuted} value={form.phone} keyboardType="phone-pad" onChangeText={(v) => setForm((p) => ({ ...p, phone: v }))} />
+        <TextInput style={[styles.input, themed.input]} placeholder="Email" placeholderTextColor={palette.textMuted} value={form.email} onChangeText={(v) => setForm((p) => ({ ...p, email: v }))} />
+        <TextInput style={[styles.bioInput, themed.input]} placeholder="Bio" placeholderTextColor={palette.textMuted} value={form.bio} multiline onChangeText={(v) => setForm((p) => ({ ...p, bio: v }))} />
 
         <View style={styles.actionRow}>
           <TouchableOpacity
-            style={[styles.availabilityBtn, state.profileStatus !== 'approved' && styles.availabilityBtnDisabled]}
+            style={[styles.availabilityBtn, themed.availabilityButton, state.profileStatus !== 'approved' && styles.availabilityBtnDisabled, state.profileStatus !== 'approved' && themed.disabledButton]}
             onPress={() => {
               if (state.profileStatus !== 'approved') {
                 Alert.alert('Validation requise', 'Votre compte doit etre valide pour changer votre disponibilite.');
@@ -291,7 +365,7 @@ export default function ProfileScreen() {
               dispatch({ type: 'TOGGLE_AVAILABILITY' });
             }}
           >
-            <Text style={[styles.availabilityText, state.profileStatus !== 'approved' && styles.availabilityTextDisabled]}>
+            <Text style={[styles.availabilityText, state.profileStatus !== 'approved' && styles.availabilityTextDisabled, state.profileStatus === 'approved' ? null : themed.mutedText]}>
               {state.availability ? 'Passer hors ligne' : 'Passer en ligne'}
             </Text>
           </TouchableOpacity>
@@ -299,6 +373,28 @@ export default function ProfileScreen() {
             {saving || loading ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={styles.saveText}>Enregistrer</Text>}
           </TouchableOpacity>
         </View>
+      </View>
+
+      <View style={[styles.card, themed.card]}>
+        <View style={styles.sectionRow}>
+          <Text style={[styles.sectionTitle, themed.primaryText]}>Tarifs</Text>
+          <TouchableOpacity onPress={() => router.push('/account/pricing')}>
+            <Text style={styles.inlineLinkText}>Modifier</Text>
+          </TouchableOpacity>
+        </View>
+        {pricingRows.map((row) => (
+          <View key={row.vehicle} style={styles.pricingBlock}>
+            <Text style={[styles.pricingVehicle, themed.primaryText]}>{driverVehicleLabels[row.vehicle as keyof typeof driverVehicleLabels] || row.vehicle}</Text>
+            {row.services.map(([service, price]) => (
+              <View key={`${row.vehicle}-${service}`} style={styles.pricingRow}>
+                <Text style={[styles.pricingLabel, themed.mutedText]}>{driverWashLabels[service as keyof typeof driverWashLabels] || service}</Text>
+                <Text style={[styles.pricingValue, themed.primaryText]}>
+                  {typeof price === 'number' && price > 0 ? `${price.toLocaleString()} F CFA` : 'Non defini'}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ))}
       </View>
     </>
   );
@@ -312,35 +408,35 @@ export default function ProfileScreen() {
         </View>
         <Text style={[styles.statusBody, { color: verificationMeta.text }]}>{verificationMeta.message}</Text>
         <View style={styles.statusActions}>
-          <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push('/account/review')}>
-            <Text style={styles.secondaryBtnText}>Voir statut dossier</Text>
+          <TouchableOpacity style={[styles.secondaryBtn, themed.secondaryButton]} onPress={() => router.push('/account/review')}>
+            <Text style={[styles.secondaryBtnText, themed.primaryText]}>Voir statut dossier</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.primaryBtn} onPress={() => router.push('/account/documents')}>
-            <Text style={styles.primaryBtnText}>Gerer documents</Text>
+            <Text style={styles.primaryBtnText}>{isCompany ? 'Gerer dossier entreprise' : 'Gerer documents'}</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Progression documents</Text>
+      <View style={[styles.card, themed.card]}>
+        <Text style={[styles.sectionTitle, themed.primaryText]}>Progression documents</Text>
         <View style={styles.progressRow}>
-          <Text style={styles.progressValue}>
+          <Text style={[styles.progressValue, themed.primaryText]}>
             {uploadedDocsCount}/{totalDocs}
           </Text>
-          <Text style={styles.progressLabel}>{documentsStatusLabel}</Text>
+          <Text style={[styles.progressLabel, themed.mutedText]}>{documentsStatusLabel}</Text>
         </View>
-        <View style={styles.progressTrack}>
+        <View style={[styles.progressTrack, themed.track]}>
           <View style={[styles.progressFill, { width: `${(uploadedDocsCount / totalDocs) * 100}%` }]} />
         </View>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Liste des documents</Text>
-        {Object.keys(DOC_LABELS).map((key) => {
-          const uploaded = Boolean(state.documents?.[key]);
+      <View style={[styles.card, themed.card]}>
+        <Text style={[styles.sectionTitle, themed.primaryText]}>Liste des documents</Text>
+        {requiredDocuments.map((doc) => {
+          const uploaded = Boolean(state.documents?.[doc.id]);
           return (
-            <View key={key} style={styles.docRow}>
-              <Text style={styles.docLabel}>{DOC_LABELS[key]}</Text>
+            <View key={doc.id} style={[styles.docRow, themed.softDivider]}>
+              <Text style={[styles.docLabel, themed.primaryText]}>{DOC_LABELS[doc.id] || doc.title}</Text>
               <Text style={[styles.docValue, uploaded ? styles.docUploaded : styles.docMissing]}>
                 {uploaded ? 'Televerse' : 'Manquant'}
               </Text>
@@ -353,43 +449,43 @@ export default function ProfileScreen() {
 
   const renderActivity = () => (
     <>
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Commandes terminees</Text>
+      <View style={[styles.card, themed.card]}>
+        <Text style={[styles.sectionTitle, themed.primaryText]}>Commandes terminees</Text>
         {completedJobs.length === 0 ? (
-          <Text style={styles.emptyText}>Aucune mission terminee pour le moment.</Text>
+          <Text style={[styles.emptyText, themed.mutedText]}>Aucune mission terminee pour le moment.</Text>
         ) : (
           completedJobs.map((job) => (
             <TouchableOpacity
               key={job.id}
-              style={styles.orderCard}
+              style={[styles.orderCard, themed.softDivider]}
               onPress={() => router.push({ pathname: '/job-details', params: { id: job.id } })}
             >
               <View style={styles.orderLeft}>
-                <Text style={styles.orderTitle}>{job.customerName}</Text>
-                <Text style={styles.orderMeta}>{job.service} - {job.vehicle}</Text>
-                <Text style={styles.orderDate}>{job.scheduledAt}</Text>
+                <Text style={[styles.orderTitle, themed.primaryText]}>{job.customerName}</Text>
+                <Text style={[styles.orderMeta, themed.mutedText]}>{job.service} - {job.vehicle}</Text>
+                <Text style={[styles.orderDate, themed.mutedText]}>{job.scheduledAt}</Text>
               </View>
-              <Text style={styles.orderPrice}>{job.price.toLocaleString()} F CFA</Text>
+              <Text style={[styles.orderPrice, themed.primaryText]}>{job.price.toLocaleString()} F CFA</Text>
             </TouchableOpacity>
           ))
         )}
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Avis clients</Text>
+      <View style={[styles.card, themed.card]}>
+        <Text style={[styles.sectionTitle, themed.primaryText]}>Avis clients</Text>
         {state.recentReviews.length === 0 ? (
-          <Text style={styles.emptyText}>Aucun avis redige pour le moment.</Text>
+          <Text style={[styles.emptyText, themed.mutedText]}>Aucun avis redige pour le moment.</Text>
         ) : (
           state.recentReviews.map((item) => (
-            <View key={`${item.bookingId}-${item.createdAt}`} style={styles.reviewItem}>
+            <View key={`${item.bookingId}-${item.createdAt}`} style={[styles.reviewItem, themed.softDivider]}>
               <View style={styles.reviewHeader}>
-                <Text style={styles.reviewName}>{item.customerName}</Text>
+                <Text style={[styles.reviewName, themed.primaryText]}>{item.customerName}</Text>
                 <View style={styles.reviewRating}>
                   <Ionicons name="star" size={12} color="#F59E0B" />
                   <Text style={styles.reviewRatingText}>{item.rating.toFixed(1)}</Text>
                 </View>
               </View>
-              <Text style={styles.reviewText}>{item.review}</Text>
+              <Text style={[styles.reviewText, themed.mutedText]}>{item.review}</Text>
             </View>
           ))
         )}
@@ -398,50 +494,57 @@ export default function ProfileScreen() {
   );
 
   const renderSettings = () => (
-    <View style={styles.card}>
-      <Text style={styles.sectionTitle}>Raccourcis</Text>
-      <TouchableOpacity style={styles.settingRow} onPress={() => loadProfile().catch(() => undefined)}>
+    <View style={[styles.card, themed.card]}>
+      <Text style={[styles.sectionTitle, themed.primaryText]}>Raccourcis</Text>
+      <TouchableOpacity style={[styles.settingRow, themed.softDivider]} onPress={() => loadProfile().catch(() => undefined)}>
         <View style={styles.settingLeft}>
           <Ionicons name="refresh" size={16} color={DriverColors.primary} />
-          <Text style={styles.settingText}>Actualiser le profil</Text>
+          <Text style={[styles.settingText, themed.primaryText]}>Actualiser le profil</Text>
         </View>
-        <Ionicons name="chevron-forward" size={16} color={DriverColors.muted} />
+        <Ionicons name="chevron-forward" size={16} color={palette.textMuted} />
       </TouchableOpacity>
       {state.profileStatus !== 'approved' ? (
         <>
-          <TouchableOpacity style={styles.settingRow} onPress={() => router.push('/account/review')}>
+          <TouchableOpacity style={[styles.settingRow, themed.softDivider]} onPress={() => router.push('/account/review')}>
             <View style={styles.settingLeft}>
               <Ionicons name="shield-checkmark-outline" size={16} color={DriverColors.primary} />
-              <Text style={styles.settingText}>Suivi verification</Text>
+              <Text style={[styles.settingText, themed.primaryText]}>Suivi verification</Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color={DriverColors.muted} />
+            <Ionicons name="chevron-forward" size={16} color={palette.textMuted} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.settingRow} onPress={() => router.push('/account/documents')}>
+          <TouchableOpacity style={[styles.settingRow, themed.softDivider]} onPress={() => router.push('/account/documents')}>
             <View style={styles.settingLeft}>
               <Ionicons name="document-text-outline" size={16} color={DriverColors.primary} />
-              <Text style={styles.settingText}>Documents</Text>
+              <Text style={[styles.settingText, themed.primaryText]}>{isCompany ? 'Documents entreprise' : 'Documents'}</Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color={DriverColors.muted} />
+            <Ionicons name="chevron-forward" size={16} color={palette.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.settingRow, themed.softDivider]} onPress={() => router.push('/account/pricing')}>
+            <View style={styles.settingLeft}>
+              <Ionicons name="cash-outline" size={16} color={DriverColors.primary} />
+              <Text style={[styles.settingText, themed.primaryText]}>Tarifs</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={palette.textMuted} />
           </TouchableOpacity>
         </>
       ) : null}
-      <TouchableOpacity style={styles.settingRow} onPress={() => router.push('/notifications')}>
+      <TouchableOpacity style={[styles.settingRow, themed.softDivider]} onPress={() => router.push('/notifications')}>
         <View style={styles.settingLeft}>
           <Ionicons name="notifications-outline" size={16} color={DriverColors.primary} />
-          <Text style={styles.settingText}>Notifications</Text>
+          <Text style={[styles.settingText, themed.primaryText]}>Notifications</Text>
         </View>
-        <Ionicons name="chevron-forward" size={16} color={DriverColors.muted} />
+        <Ionicons name="chevron-forward" size={16} color={palette.textMuted} />
       </TouchableOpacity>
     </View>
   );
 
   const renderSecurity = () => (
-    <View style={styles.card}>
-      <Text style={styles.sectionTitle}>Securite du compte</Text>
+    <View style={[styles.card, themed.card]}>
+      <Text style={[styles.sectionTitle, themed.primaryText]}>Securite du compte</Text>
       <View style={styles.securityToggleRow}>
         <View style={styles.securityToggleCopy}>
-          <Text style={styles.securityToggleTitle}>Connexion biométrique</Text>
-          <Text style={styles.securityToggleHint}>
+          <Text style={[styles.securityToggleTitle, themed.primaryText]}>Connexion biométrique</Text>
+          <Text style={[styles.securityToggleHint, themed.mutedText]}>
             {Platform.OS === 'ios'
               ? 'Utilisez Face ID pour proteger l acces a l application.'
               : 'Utilisez la biometrie de l appareil pour proteger l acces a l application.'}
@@ -449,8 +552,8 @@ export default function ProfileScreen() {
         </View>
         <Switch
           value={state.biometricEnabled}
-          trackColor={{ false: '#D1D5DB', true: '#BFDBFE' }}
-          thumbColor={state.biometricEnabled ? DriverColors.primary : '#FFFFFF'}
+          trackColor={{ false: palette.border, true: palette.primaryBorder }}
+          thumbColor={state.biometricEnabled ? DriverColors.primary : palette.surface}
           onValueChange={async (nextValue) => {
             if (!nextValue) {
               dispatch({ type: 'SET_BIOMETRIC_ENABLED', value: false });
@@ -482,17 +585,17 @@ export default function ProfileScreen() {
           }}
         />
       </View>
-      <View style={styles.securityRow}>
-        <Text style={styles.securityLabel}>Identifiant session</Text>
-        <Text style={styles.securityValue}>{state.driverId ? `DRV-${state.driverId}` : '-'}</Text>
+      <View style={[styles.securityRow, themed.softDivider]}>
+        <Text style={[styles.securityLabel, themed.mutedText]}>Identifiant session</Text>
+        <Text style={[styles.securityValue, themed.primaryText]}>{state.driverId ? `DRV-${state.driverId}` : '-'}</Text>
       </View>
-      <View style={styles.securityRow}>
-        <Text style={styles.securityLabel}>Numero connecte</Text>
-        <Text style={styles.securityValue}>{state.driverPhone || '-'}</Text>
+      <View style={[styles.securityRow, themed.softDivider]}>
+        <Text style={[styles.securityLabel, themed.mutedText]}>Numero connecte</Text>
+        <Text style={[styles.securityValue, themed.primaryText]}>{state.driverPhone || '-'}</Text>
       </View>
-      <View style={styles.securityRow}>
-        <Text style={styles.securityLabel}>Version application</Text>
-        <Text style={styles.securityValue}>{state.lastSeenAppVersion || '-'}</Text>
+      <View style={[styles.securityRow, themed.softDivider]}>
+        <Text style={[styles.securityLabel, themed.mutedText]}>Version application</Text>
+        <Text style={[styles.securityValue, themed.primaryText]}>{state.lastSeenAppVersion || '-'}</Text>
       </View>
 
       <TouchableOpacity
@@ -518,11 +621,11 @@ export default function ProfileScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, themed.container]}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Text style={styles.title}>Profil laveur</Text>
-          <TouchableOpacity style={styles.headerIcon} onPress={() => loadProfile().catch(() => undefined)}>
+          <Text style={[styles.title, themed.title]}>Profil laveur</Text>
+          <TouchableOpacity style={[styles.headerIcon, themed.headerIcon]} onPress={() => loadProfile().catch(() => undefined)}>
             <Ionicons name="refresh" size={18} color={DriverColors.primary} />
           </TouchableOpacity>
         </View>
@@ -533,11 +636,11 @@ export default function ProfileScreen() {
             return (
               <TouchableOpacity
                 key={tab.id}
-                style={[styles.tabChip, selected && styles.tabChipActive]}
+                style={[styles.tabChip, themed.tabChip, selected && styles.tabChipActive]}
                 onPress={() => setActiveTab(tab.id)}
               >
-                <Ionicons name={tab.icon} size={14} color={selected ? '#FFFFFF' : DriverColors.muted} />
-                <Text style={[styles.tabText, selected && styles.tabTextActive]}>{tab.label}</Text>
+                <Ionicons name={tab.icon} size={14} color={selected ? '#FFFFFF' : palette.textMuted} />
+                <Text style={[styles.tabText, themed.tabText, selected && styles.tabTextActive]}>{tab.label}</Text>
               </TouchableOpacity>
             );
           })}
@@ -689,6 +792,17 @@ const styles = StyleSheet.create({
     color: DriverColors.text,
     marginBottom: 10,
   },
+  sectionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  inlineLinkText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: DriverColors.primary,
+  },
   input: {
     height: 44,
     borderRadius: DriverRadius.md,
@@ -742,6 +856,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#FFF',
+  },
+  pricingBlock: {
+    borderTopWidth: 1,
+    borderTopColor: '#EEF2F0',
+    paddingTop: 10,
+    marginTop: 10,
+  },
+  pricingVehicle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: DriverColors.text,
+    marginBottom: 6,
+  },
+  pricingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  pricingLabel: {
+    fontSize: 12,
+    color: DriverColors.muted,
+  },
+  pricingValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: DriverColors.text,
   },
   statusCard: {
     borderRadius: DriverRadius.md,

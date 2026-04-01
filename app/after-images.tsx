@@ -17,8 +17,10 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing } from '@/constants/driverTheme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
 import { transitionJob, uploadJobMedia } from '@/lib/api';
+import { getDriverPalette } from '@/lib/driverAppearance';
 
 const slots = [0, 1, 2, 3, 4, 5];
 const COMMISSION_RATE = 0.2;
@@ -26,6 +28,7 @@ const COMMISSION_RATE = 0.2;
 export default function AfterImagesScreen() {
   const router = useRouter();
   const { state, dispatch, refreshJobsNow } = useDriverStore();
+  const palette = getDriverPalette(useColorScheme());
   const [uploadingCount, setUploadingCount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -144,22 +147,22 @@ export default function AfterImagesScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: palette.background }]}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Ajoutez 6 photos du vehicule apres lavage (camera ou galerie)</Text>
+        <Text style={[styles.title, { color: palette.text }]}>Ajoutez 6 photos du vehicule apres lavage (camera ou galerie)</Text>
 
         <View style={styles.grid}>
           {slots.map((slot) => {
             const uri = photos[slot];
             return (
-              <TouchableOpacity key={slot} style={styles.photoCard} onPress={() => pickImage(slot)}>
+              <TouchableOpacity key={slot} style={[styles.photoCard, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]} onPress={() => pickImage(slot)}>
                 {uri ? <Image source={{ uri }} style={styles.photo} /> : null}
                 <View style={[styles.slotBadge, uri && styles.slotBadgeFilled]}>
-                  <Text style={[styles.slotBadgeText, uri && styles.slotBadgeTextFilled]}>
+                  <Text style={[styles.slotBadgeText, { color: palette.text }, uri && styles.slotBadgeTextFilled]}>
                     {slot + 1}/6
                   </Text>
                 </View>
-                <View style={styles.refreshIcon}>
+                <View style={[styles.refreshIcon, { backgroundColor: palette.surface, borderColor: palette.border }]}>
                   <Ionicons name="refresh" size={16} color={DriverColors.primary} />
                 </View>
               </TouchableOpacity>
@@ -169,9 +172,9 @@ export default function AfterImagesScreen() {
 
         <View style={styles.progressRow}>
           <View style={styles.progressBadge}>
-            <Text style={styles.progressText}>{Math.min(6, progress)}/6</Text>
+            <Text style={[styles.progressText, { color: palette.text }]}>{Math.min(6, progress)}/6</Text>
           </View>
-          <Text style={styles.progressHint}>Ajoutez 6 photos claires montrant le vehicule nettoye apres le lavage.</Text>
+          <Text style={[styles.progressHint, { color: palette.textMuted }]}>Ajoutez 6 photos claires montrant le vehicule nettoye apres le lavage.</Text>
         </View>
 
         <TouchableOpacity
@@ -184,8 +187,8 @@ export default function AfterImagesScreen() {
       </ScrollView>
 
       <Modal visible={showSuccess} transparent animationType="fade" onRequestClose={() => undefined}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.successCard}>
+        <View style={[styles.modalBackdrop, { backgroundColor: palette.overlay }]}>
+          <View style={[styles.successCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
             <Animated.View
               style={[
                 styles.successIconWrap,
@@ -204,19 +207,19 @@ export default function AfterImagesScreen() {
               <Ionicons name="checkmark" size={28} color="#FFFFFF" />
             </Animated.View>
 
-            <Text style={styles.successTitle}>Mission terminee avec succes</Text>
-            <Text style={styles.successSubtitle}>Le paiement de cette commande a bien ete enregistre.</Text>
+            <Text style={[styles.successTitle, { color: palette.text }]}>Mission terminee avec succes</Text>
+            <Text style={[styles.successSubtitle, { color: palette.textMuted }]}>Le paiement de cette commande a bien ete enregistre.</Text>
 
-            <View style={styles.earningsCard}>
+            <View style={[styles.earningsCard, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
               <View style={styles.earningRow}>
-                <Text style={styles.earningLabel}>Montant commande</Text>
+                <Text style={[styles.earningLabel, { color: palette.textMuted }]}>Montant commande</Text>
                 <Text style={styles.earningValue}>{completedAmount.toLocaleString()} F CFA</Text>
               </View>
               <View style={styles.earningRow}>
-                <Text style={styles.earningLabel}>Commission ({Math.round(COMMISSION_RATE * 100)}%)</Text>
+                <Text style={[styles.earningLabel, { color: palette.textMuted }]}>Commission ({Math.round(COMMISSION_RATE * 100)}%)</Text>
                 <Text style={styles.earningNegative}>- {commissionAmount.toLocaleString()} F CFA</Text>
               </View>
-              <View style={styles.earningDivider} />
+              <View style={[styles.earningDivider, { backgroundColor: palette.border }]} />
               <View style={styles.earningRow}>
                 <Text style={styles.earningNetLabel}>Gain net</Text>
                 <Text style={styles.earningNetValue}>{netAmount.toLocaleString()} F CFA</Text>

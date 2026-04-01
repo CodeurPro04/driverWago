@@ -11,12 +11,15 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing, DriverTypography } from '@/constants/driverTheme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
 import { useScreenRefresh } from '@/hooks/useScreenRefresh';
+import { getDriverPalette } from '@/lib/driverAppearance';
 
 export default function WalletScreen() {
   const router = useRouter();
   const { state, dispatch } = useDriverStore();
+  const palette = getDriverPalette(useColorScheme());
   useScreenRefresh({ inbox: true, intervalMs: 30000 });
 
   const unreadCount = useMemo(() => state.notifications.filter((item) => !item.read).length, [state.notifications]);
@@ -67,15 +70,15 @@ export default function WalletScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: palette.background }]}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <View style={styles.statusPill}>
+          <View style={[styles.statusPill, { backgroundColor: palette.surfaceMuted }]}>
             <TouchableOpacity
               style={[styles.statusOption, !state.availability && styles.statusOptionActive]}
               onPress={() => state.availability && dispatch({ type: 'TOGGLE_AVAILABILITY' })}
             >
-              <Text style={[styles.statusText, !state.availability && styles.statusTextActive]}>
+              <Text style={[styles.statusText, { color: palette.textMuted }, !state.availability && styles.statusTextActive]}>
                 Hors ligne
               </Text>
             </TouchableOpacity>
@@ -83,12 +86,12 @@ export default function WalletScreen() {
               style={[styles.statusOption, state.availability && styles.statusOptionActive]}
               onPress={() => !state.availability && dispatch({ type: 'TOGGLE_AVAILABILITY' })}
             >
-              <Text style={[styles.statusText, state.availability && styles.statusTextActive]}>
+              <Text style={[styles.statusText, { color: palette.textMuted }, state.availability && styles.statusTextActive]}>
                 En ligne
               </Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.notificationButton} onPress={() => router.push('/notifications')}>
+          <TouchableOpacity style={[styles.notificationButton, { backgroundColor: palette.iconButton }]} onPress={() => router.push('/notifications')}>
             <Ionicons name="notifications-outline" size={20} color={DriverColors.primary} />
             {unreadCount > 0 ? (
               <View style={styles.badge}>
@@ -98,37 +101,37 @@ export default function WalletScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.balanceCard}>
+        <View style={[styles.balanceCard, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
           <View style={styles.balanceHeader}>
-            <Text style={styles.balanceLabel}>Solde du portefeuille</Text>
+            <Text style={[styles.balanceLabel, { color: palette.textMuted }]}>Solde du portefeuille</Text>
             <Ionicons name="chevron-forward" size={18} color={DriverColors.muted} />
           </View>
-          <Text style={styles.balanceValue}>{Math.max(0, state.cashoutBalance).toLocaleString()} F CFA</Text>
+          <Text style={[styles.balanceValue, { color: palette.text }]}>{Math.max(0, state.cashoutBalance).toLocaleString()} F CFA</Text>
           <View style={styles.balanceActions}>
-            <TouchableOpacity style={styles.actionButton} onPress={handleDeposit}>
+            <TouchableOpacity style={[styles.actionButton, { backgroundColor: palette.surface, borderColor: palette.border }]} onPress={handleDeposit}>
               <Ionicons name="add" size={16} color={DriverColors.primary} />
-              <Text style={styles.actionText}>Depot</Text>
+              <Text style={[styles.actionText, { color: palette.text }]}>Depot</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton} onPress={handleWithdraw}>
+            <TouchableOpacity style={[styles.actionButton, { backgroundColor: palette.surface, borderColor: palette.border }]} onPress={handleWithdraw}>
               <Ionicons name="arrow-down" size={16} color={DriverColors.primary} />
-              <Text style={styles.actionText}>Retrait</Text>
+              <Text style={[styles.actionText, { color: palette.text }]}>Retrait</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Historique des transactions</Text>
+          <Text style={[styles.sectionTitle, { color: palette.text }]}>Historique des transactions</Text>
         </View>
 
         {transactions.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>Aucune transaction</Text>
-            <Text style={styles.emptyText}>Vos gains, depots et retraits seront affiches ici.</Text>
+          <View style={[styles.emptyCard, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
+            <Text style={[styles.emptyTitle, { color: palette.text }]}>Aucune transaction</Text>
+            <Text style={[styles.emptyText, { color: palette.textMuted }]}>Vos gains, depots et retraits seront affiches ici.</Text>
           </View>
         ) : (
           transactions.map((item) => (
-            <View key={item.id} style={styles.transactionCard}>
-              <View style={styles.transactionIcon}>
+            <View key={item.id} style={[styles.transactionCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+              <View style={[styles.transactionIcon, { backgroundColor: palette.surfaceAlt }]}>
                 <Ionicons
                   name={item.amount < 0 ? 'arrow-down' : 'arrow-up'}
                   size={16}
@@ -136,8 +139,8 @@ export default function WalletScreen() {
                 />
               </View>
               <View style={styles.transactionBody}>
-                <Text style={styles.transactionTitle}>{item.title}</Text>
-                <Text style={styles.transactionDate}>{item.date}</Text>
+                <Text style={[styles.transactionTitle, { color: palette.text }]}>{item.title}</Text>
+                <Text style={[styles.transactionDate, { color: palette.textMuted }]}>{item.date}</Text>
               </View>
               <Text style={[styles.transactionAmount, item.amount < 0 && styles.transactionAmountNegative]}>
                 {item.amount > 0 ? '+' : ''}

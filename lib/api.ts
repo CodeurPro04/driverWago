@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { DriverAccountType, DriverPricing, normalizeDriverPricing } from '@/lib/driverAccount';
 
 export class ApiError extends Error {
   status: number;
@@ -70,6 +71,7 @@ const normalizeUser = (user: any) => {
     ...user,
     avatar_url: absolutizeMediaUrl(user.avatar_url),
     documents: normalizeDocuments(user.documents),
+    pricing: normalizeDriverPricing(user.pricing),
   };
 };
 
@@ -144,6 +146,9 @@ export async function mobileLogin(payload: {
       phone: string;
       email?: string | null;
       role: 'customer' | 'driver';
+      driver_account_type?: DriverAccountType | null;
+      company_name?: string | null;
+      manager_name?: string | null;
       wallet_balance: number;
       is_available: boolean;
       bio?: string | null;
@@ -153,6 +158,8 @@ export async function mobileLogin(payload: {
       profile_status?: string;
       account_step?: number;
       documents?: Record<string, string | null>;
+      pricing?: DriverPricing;
+      required_documents?: string[];
       documents_status?: 'pending' | 'submitted' | 'approved' | 'rejected';
     };
   }>('/auth/mobile-login', {
@@ -172,6 +179,9 @@ type AuthSession = {
     phone: string;
     email?: string | null;
     role: 'customer' | 'driver';
+    driver_account_type?: DriverAccountType | null;
+    company_name?: string | null;
+    manager_name?: string | null;
     wallet_balance: number;
     is_available: boolean;
     bio?: string | null;
@@ -181,6 +191,8 @@ type AuthSession = {
     profile_status?: string;
     account_step?: number;
     documents?: Record<string, string | null>;
+    pricing?: DriverPricing;
+    required_documents?: string[];
     documents_status?: 'pending' | 'submitted' | 'approved' | 'rejected';
   };
   token?: string | null;
@@ -199,12 +211,14 @@ const normalizeAuthSession = (raw: any, provider: AuthProvider): AuthSession => 
 };
 
 export async function registerWithEmail(payload: {
-  first_name: string;
-  last_name: string;
+  first_name?: string;
+  last_name?: string;
+  company_name?: string;
   email: string;
   password: string;
   phone?: string;
   role?: 'customer' | 'driver';
+  driver_account_type?: DriverAccountType;
 }) {
   const response = await apiRequest<any>('/auth/email/register', {
     method: 'POST',
@@ -301,6 +315,9 @@ export async function updateUserProfile(
   payload: Partial<{
     first_name: string;
     last_name: string;
+    company_name: string;
+    manager_name: string;
+    driver_account_type: DriverAccountType;
     email: string;
     phone: string;
     bio: string;
@@ -308,6 +325,7 @@ export async function updateUserProfile(
     account_step: number;
     profile_status: 'pending' | 'approved' | 'rejected';
     is_available: boolean;
+    pricing: DriverPricing;
   }>
 ) {
   const response = await apiRequest<{ user: any; stats: Record<string, number> }>(`/users/${userId}/profile`, {
@@ -384,7 +402,7 @@ export async function submitDriverDocuments(driverId: number) {
 
 export async function getDriverNotifications(driverId: number) {
   return apiRequest<{
-    notifications: Array<{
+    notifications: {
       id: number;
       type: 'earning' | 'deposit' | 'withdrawal' | 'system';
       title: string;
@@ -392,7 +410,7 @@ export async function getDriverNotifications(driverId: number) {
       data?: Record<string, unknown>;
       read_at?: string | null;
       created_at: string;
-    }>;
+    }[];
     unread_count: number;
   }>(`/drivers/${driverId}/notifications`);
 }
@@ -420,14 +438,14 @@ export async function clearDriverNotifications(driverId: number) {
 export async function getDriverWalletTransactions(driverId: number) {
   return apiRequest<{
     balance: number;
-    transactions: Array<{
+    transactions: {
       id: number;
       type: 'earning' | 'deposit' | 'withdrawal';
       amount: number;
       method?: string | null;
       meta?: Record<string, unknown>;
       created_at: string;
-    }>;
+    }[];
   }>(`/drivers/${driverId}/wallet/transactions`);
 }
 

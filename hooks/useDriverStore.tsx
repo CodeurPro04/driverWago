@@ -3,6 +3,8 @@ import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
+import * as Location from 'expo-location';
+import type { LocationSubscription } from 'expo-location';
 import {
   acceptJob,
   clearDriverNotifications,
@@ -17,6 +19,13 @@ import {
   transitionJob,
   updateDriverAvailability,
 } from '@/lib/api';
+import {
+  DriverAccountType,
+  DriverPricing,
+  createEmptyDriverDocuments,
+  createEmptyDriverPricing,
+  normalizeDriverPricing,
+} from '@/lib/driverAccount';
 import { configurePushChannels, getExpoPushTokenSafe } from '@/lib/push';
 import { subscribeDriverRealtime } from '@/lib/realtime';
 
@@ -80,6 +89,12 @@ interface DriverState {
   driverId: number | null;
   driverPhone: string;
   driverName: string;
+  driverLatitude: number | null;
+  driverLongitude: number | null;
+  driverAccountType: DriverAccountType;
+  companyName: string;
+  managerName: string;
+  pricing: DriverPricing;
   biometricEnabled: boolean;
   rating: number;
   reviewsCount: number;
@@ -118,6 +133,11 @@ type DriverAction =
   | { type: 'SET_AFTER_PHOTO'; index: number; uri: string }
   | { type: 'SET_DRIVER_PHONE'; value: string }
   | { type: 'SET_DRIVER_NAME'; value: string }
+  | { type: 'SET_DRIVER_COORDS'; value: { latitude: number; longitude: number } | null }
+  | { type: 'SET_DRIVER_ACCOUNT_TYPE'; value: DriverAccountType }
+  | { type: 'SET_COMPANY_NAME'; value: string }
+  | { type: 'SET_MANAGER_NAME'; value: string }
+  | { type: 'SET_PRICING'; value: DriverPricing }
   | { type: 'SET_BIOMETRIC_ENABLED'; value: boolean }
   | {
       type: 'SET_DRIVER_SESSION';
@@ -126,10 +146,14 @@ type DriverAction =
         name: string;
         phone: string;
         isAvailable: boolean;
+        accountType?: DriverAccountType | null;
+        companyName?: string | null;
+        managerName?: string | null;
         accountStep?: number;
         profileStatus?: 'pending' | 'approved' | 'rejected';
         documents?: Record<string, string | null>;
         documentsStatus?: DriverState['documentsStatus'];
+        pricing?: DriverPricing | null;
         rating?: number;
       };
     }
@@ -147,7 +171,7 @@ type DriverAction =
   | { type: 'CLEAR_DRIVER_SESSION' }
   | { type: 'HYDRATE'; value: Partial<DriverState> };
 
-const STORAGE_KEY = 'ZIWAGO_DRIVER_STATE_V7';
+const STORAGE_KEY = 'ZIWAGO_DRIVER_STATE_V8';
 
 const toDateOnlyLabel = (raw?: string) => {
   const now = new Date();
@@ -183,6 +207,12 @@ const initialState: DriverState = {
   driverId: null,
   driverPhone: '',
   driverName: 'Laveur',
+  driverLatitude: null,
+  driverLongitude: null,
+  driverAccountType: 'independent',
+  companyName: '',
+  managerName: '',
+  pricing: createEmptyDriverPricing(),
   biometricEnabled: false,
   rating: 0,
   reviewsCount: 0,
@@ -198,7 +228,7 @@ const initialState: DriverState = {
   profileStatus: 'pending',
   beforePhotos: [],
   afterPhotos: [],
-  documents: { id: null, profile: null, license: null, address: null, certificate: null },
+  documents: createEmptyDriverDocuments(),
   documentsStatus: 'pending',
   lastAutoCancelledJobId: null,
   lastSeenAppVersion: '',
@@ -216,29 +246,110 @@ const statusFromApi = (status: string): JobStatus => {
 
 const activeStatuses: JobStatus[] = ['accepted', 'enRoute', 'arrived', 'washing'];
 
-const mapApiJob = (job: any): DriverJob => ({
-  id: String(job.id),
-  customerName: job.customer_name || 'Client',
-  customerAvatarUrl: job.customer_avatar_url || null,
-  beforePhotos: Array.isArray(job.before_photos) ? job.before_photos : [],
-  afterPhotos: Array.isArray(job.after_photos) ? job.after_photos : [],
-  customerRating: job.customer_rating ? Number(job.customer_rating) : null,
-  customerReview: job.customer_review || null,
-  service: job.service || 'Lavage',
-  vehicle: job.vehicle || 'Vehicule',
-  address: job.address || 'Adresse non renseignee',
-  latitude: Number(job.latitude || 5.3364),
-  longitude: Number(job.longitude || -4.0267),
-  distanceKm: 2.5,
-  etaMin: 12,
-  price: Number(job.price || 0),
-  scheduledAt: toDateOnlyLabel(job.scheduled_at),
-  notes: undefined,
-  status: statusFromApi(job.status),
-  createdAt: toDateOnlyLabel(job.created_at || job.scheduled_at),
-  phone: job.customer_phone || '+225 00 00 00 00 00',
-  cancelledReason: job.cancelled_reason || null,
-});
+const EARTH_RADIUS_KM = 6371;
+const DEFAULT_DISTANCE_KM = 2.5;
+const DEFAULT_ETA_MIN = 12;
+const AVG_CITY_SPEED_KMH = 28;
+
+const toRadians = (value: number) => (value * Math.PI) / 180;
+
+const haversineDistanceKm = (
+  origin: { latitude: number; longitude: number },
+  destination: { latitude: number; longitude: number }
+) => {
+  const latDelta = toRadians(destination.latitude - origin.latitude);
+  const lngDelta = toRadians(destination.longitude - origin.longitude);
+  const lat1 = toRadians(origin.latitude);
+  const lat2 = toRadians(destination.latitude);
+
+  const a =
+    Math.sin(latDelta / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(lngDelta / 2) ** 2;
+
+  return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(a));
+};
+
+const etaFromDistanceKm = (distanceKm: number) => {
+  if (!Number.isFinite(distanceKm) || distanceKm <= 0) return 1;
+  return Math.max(1, Math.ceil((distanceKm / AVG_CITY_SPEED_KMH) * 60));
+};
+
+const getCurrentDriverCoordinates = async () => {
+  try {
+    const permission = await Location.getForegroundPermissionsAsync();
+    if (permission.status !== 'granted') {
+      const requested = await Location.requestForegroundPermissionsAsync();
+      if (requested.status !== 'granted') return null;
+    }
+
+    const lastKnown = await Location.getLastKnownPositionAsync();
+    if (lastKnown?.coords) {
+      return {
+        latitude: lastKnown.coords.latitude,
+        longitude: lastKnown.coords.longitude,
+      };
+    }
+
+    const current = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced,
+    });
+
+    return current?.coords
+      ? {
+          latitude: current.coords.latitude,
+          longitude: current.coords.longitude,
+        }
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const mapApiJob = (
+  job: any,
+  driverCoords?: { latitude: number; longitude: number } | null
+): DriverJob => {
+  const latitude = Number(job.latitude || 5.3364);
+  const longitude = Number(job.longitude || -4.0267);
+  const computedDistanceKm =
+    driverCoords && Number.isFinite(latitude) && Number.isFinite(longitude)
+      ? haversineDistanceKm(driverCoords, { latitude, longitude })
+      : null;
+  const fallbackDistance = Number(job.distance_km || job.distanceKm || DEFAULT_DISTANCE_KM);
+  const distanceKm =
+    computedDistanceKm !== null && Number.isFinite(computedDistanceKm)
+      ? Number(computedDistanceKm.toFixed(1))
+      : fallbackDistance;
+  const fallbackEta = Number(job.eta_min || job.etaMin || DEFAULT_ETA_MIN);
+  const etaMin =
+    computedDistanceKm !== null && Number.isFinite(computedDistanceKm)
+      ? etaFromDistanceKm(computedDistanceKm)
+      : fallbackEta;
+
+  return {
+    id: String(job.id),
+    customerName: job.customer_name || 'Client',
+    customerAvatarUrl: job.customer_avatar_url || null,
+    beforePhotos: Array.isArray(job.before_photos) ? job.before_photos : [],
+    afterPhotos: Array.isArray(job.after_photos) ? job.after_photos : [],
+    customerRating: job.customer_rating ? Number(job.customer_rating) : null,
+    customerReview: job.customer_review || null,
+    service: job.service || 'Lavage',
+    vehicle: job.vehicle || 'Vehicule',
+    address: job.address || 'Adresse non renseignee',
+    latitude,
+    longitude,
+    distanceKm,
+    etaMin,
+    price: Number(job.price || 0),
+    scheduledAt: toDateOnlyLabel(job.scheduled_at),
+    notes: undefined,
+    status: statusFromApi(job.status),
+    createdAt: toDateOnlyLabel(job.created_at || job.scheduled_at),
+    phone: job.customer_phone || '+225 00 00 00 00 00',
+    cancelledReason: job.cancelled_reason || null,
+  };
+};
 
 const mapApiNotification = (item: any): DriverNotification => ({
   id: String(item.id),
@@ -265,6 +376,39 @@ const mapApiWalletTransaction = (item: any): WalletTransaction => {
   };
 };
 
+const enrichJobsWithDriverCoords = (
+  jobs: DriverJob[],
+  driverCoords?: { latitude: number; longitude: number } | null
+) =>
+  jobs.map((job) => {
+    const safeDistanceKm =
+      typeof job.distanceKm === 'number' && Number.isFinite(job.distanceKm) && job.distanceKm >= 0
+        ? job.distanceKm
+        : DEFAULT_DISTANCE_KM;
+
+    if (!driverCoords) return job;
+    const distance = haversineDistanceKm(driverCoords, { latitude: job.latitude, longitude: job.longitude });
+    return {
+      ...job,
+      distanceKm: Number(distance.toFixed(1)) || safeDistanceKm,
+      etaMin: etaFromDistanceKm(distance),
+    };
+  }).map((job) => ({
+    ...job,
+    distanceKm:
+      typeof job.distanceKm === 'number' && Number.isFinite(job.distanceKm) && job.distanceKm >= 0
+        ? job.distanceKm
+        : DEFAULT_DISTANCE_KM,
+    etaMin:
+      typeof job.etaMin === 'number' && Number.isFinite(job.etaMin) && job.etaMin > 0
+        ? job.etaMin
+        : etaFromDistanceKm(
+            typeof job.distanceKm === 'number' && Number.isFinite(job.distanceKm) && job.distanceKm >= 0
+              ? job.distanceKm
+              : DEFAULT_DISTANCE_KM
+          ),
+  }));
+
 const driverReducer = (state: DriverState, action: DriverAction): DriverState => {
   switch (action.type) {
     case 'TOGGLE_AVAILABILITY':
@@ -275,6 +419,21 @@ const driverReducer = (state: DriverState, action: DriverAction): DriverState =>
       return { ...state, driverPhone: action.value };
     case 'SET_DRIVER_NAME':
       return { ...state, driverName: action.value };
+    case 'SET_DRIVER_COORDS':
+      return {
+        ...state,
+        driverLatitude: action.value?.latitude ?? null,
+        driverLongitude: action.value?.longitude ?? null,
+        jobs: enrichJobsWithDriverCoords(state.jobs, action.value),
+      };
+    case 'SET_DRIVER_ACCOUNT_TYPE':
+      return { ...state, driverAccountType: action.value };
+    case 'SET_COMPANY_NAME':
+      return { ...state, companyName: action.value };
+    case 'SET_MANAGER_NAME':
+      return { ...state, managerName: action.value };
+    case 'SET_PRICING':
+      return { ...state, pricing: normalizeDriverPricing(action.value) };
     case 'SET_BIOMETRIC_ENABLED':
       return { ...state, biometricEnabled: action.value };
     case 'SET_DRIVER_SESSION':
@@ -283,11 +442,15 @@ const driverReducer = (state: DriverState, action: DriverAction): DriverState =>
         driverId: action.value.id,
         driverName: action.value.name,
         driverPhone: action.value.phone,
+        driverAccountType: action.value.accountType ?? state.driverAccountType,
+        companyName: action.value.companyName ?? state.companyName,
+        managerName: action.value.managerName ?? state.managerName,
         availability: action.value.isAvailable,
         accountStep: action.value.accountStep ?? state.accountStep,
         profileStatus: action.value.profileStatus ?? state.profileStatus,
-        documents: action.value.documents ?? state.documents,
+        documents: action.value.documents ? { ...createEmptyDriverDocuments(), ...action.value.documents } : state.documents,
         documentsStatus: action.value.documentsStatus ?? state.documentsStatus,
+        pricing: action.value.pricing ? normalizeDriverPricing(action.value.pricing) : state.pricing,
         rating: typeof action.value.rating === 'number' ? action.value.rating : state.rating,
       };
     case 'SET_JOBS': {
@@ -330,7 +493,12 @@ const driverReducer = (state: DriverState, action: DriverAction): DriverState =>
 
       return {
         ...state,
-        jobs: action.jobs,
+        jobs: enrichJobsWithDriverCoords(
+          action.jobs,
+          state.driverLatitude !== null && state.driverLongitude !== null
+            ? { latitude: state.driverLatitude, longitude: state.driverLongitude }
+            : null
+        ),
         activeJobId: firstActive?.id || null,
         rating: averageRating,
         reviewsCount,
@@ -414,7 +582,7 @@ const driverReducer = (state: DriverState, action: DriverAction): DriverState =>
     case 'SET_DOCUMENT':
       return { ...state, documents: { ...state.documents, [action.id]: action.uri } };
     case 'SET_DOCUMENTS':
-      return { ...state, documents: { ...state.documents, ...action.value } };
+      return { ...state, documents: { ...createEmptyDriverDocuments(), ...state.documents, ...action.value } };
     case 'SET_DOCUMENTS_STATUS':
       return { ...state, documentsStatus: action.value };
     case 'SET_BEFORE_PHOTO': {
@@ -437,12 +605,34 @@ const driverReducer = (state: DriverState, action: DriverAction): DriverState =>
       return {
         ...state,
         ...action.value,
+        driverAccountType:
+          action.value.driverAccountType === 'company' || action.value.driverAccountType === 'independent'
+            ? action.value.driverAccountType
+            : state.driverAccountType,
+        pricing: normalizeDriverPricing(action.value.pricing as DriverPricing | undefined),
+        documents: { ...createEmptyDriverDocuments(), ...(action.value.documents || {}) },
+        driverLatitude:
+          typeof action.value.driverLatitude === 'number' && Number.isFinite(action.value.driverLatitude)
+            ? action.value.driverLatitude
+            : state.driverLatitude,
+        driverLongitude:
+          typeof action.value.driverLongitude === 'number' && Number.isFinite(action.value.driverLongitude)
+            ? action.value.driverLongitude
+            : state.driverLongitude,
         jobs: Array.isArray(action.value.jobs)
-          ? action.value.jobs.map((job) => ({
-              ...job,
-              scheduledAt: toDateOnlyLabel(job.scheduledAt),
-              createdAt: toDateOnlyLabel(job.createdAt),
-            }))
+          ? enrichJobsWithDriverCoords(
+              action.value.jobs.map((job) => ({
+                ...job,
+                scheduledAt: toDateOnlyLabel(job.scheduledAt),
+                createdAt: toDateOnlyLabel(job.createdAt),
+              })),
+              typeof action.value.driverLatitude === 'number' &&
+                Number.isFinite(action.value.driverLatitude) &&
+                typeof action.value.driverLongitude === 'number' &&
+                Number.isFinite(action.value.driverLongitude)
+                ? { latitude: action.value.driverLatitude, longitude: action.value.driverLongitude }
+                : null
+            )
           : state.jobs,
       };
     default:
@@ -466,8 +656,12 @@ export const DriverProvider = ({ children }: { children: React.ReactNode }) => {
 
   const refreshJobs = useCallback(async (driverId: number) => {
     const response = await getDriverJobs(driverId);
-    dispatch({ type: 'SET_JOBS', jobs: response.jobs.map(mapApiJob) });
-  }, []);
+    const driverCoords =
+      state.driverLatitude !== null && state.driverLongitude !== null
+        ? { latitude: state.driverLatitude, longitude: state.driverLongitude }
+        : await getCurrentDriverCoordinates();
+    dispatch({ type: 'SET_JOBS', jobs: response.jobs.map((job) => mapApiJob(job, driverCoords)) });
+  }, [state.driverLatitude, state.driverLongitude]);
 
   const refreshRemoteInbox = useCallback(async (driverId: number) => {
     const [notifRes, walletRes] = await Promise.all([
@@ -513,6 +707,101 @@ export const DriverProvider = ({ children }: { children: React.ReactNode }) => {
     if (appState !== 'active') return;
     Promise.all([refreshJobs(state.driverId), refreshRemoteInbox(state.driverId)]).catch(() => undefined);
   }, [hydrated, state.driverId, appState, refreshJobs, refreshRemoteInbox]);
+
+  useEffect(() => {
+    if (!hydrated || !state.driverId) return;
+    if (appState !== 'active') return;
+
+    let cancelled = false;
+    let watchSubscription: LocationSubscription | null = null;
+    let lastSentAt = 0;
+    let lastSentCoords: { latitude: number; longitude: number } | null = null;
+    const driverId = state.driverId;
+
+    const maybeSyncLocation = async (coords: { latitude: number; longitude: number }) => {
+      const now = Date.now();
+      const movedEnough =
+        !lastSentCoords ||
+        haversineDistanceKm(lastSentCoords, coords) >= 0.05;
+      const waitedEnough = now - lastSentAt >= 15000;
+
+      if (!movedEnough && !waitedEnough) return;
+
+      lastSentCoords = coords;
+      lastSentAt = now;
+      try {
+        await updateDriverAvailability(driverId, {
+          is_available: state.availability,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        });
+      } catch {
+        // Keep local tracking even if the backend call fails.
+      }
+    };
+
+    const startTracking = async () => {
+      const servicesEnabled = await Location.hasServicesEnabledAsync();
+      if (!servicesEnabled || cancelled) return;
+
+      const permission = await Location.getForegroundPermissionsAsync();
+      const granted =
+        permission.status === 'granted'
+          ? permission
+          : await Location.requestForegroundPermissionsAsync();
+      if (granted.status !== 'granted' || cancelled) return;
+
+      const applyCoords = async (coords: { latitude: number; longitude: number }) => {
+        if (cancelled) return;
+        dispatch({ type: 'SET_DRIVER_COORDS', value: coords });
+        await maybeSyncLocation(coords);
+      };
+
+      const lastKnown = await Location.getLastKnownPositionAsync({
+        maxAge: 60000,
+        requiredAccuracy: 200,
+      });
+      if (lastKnown?.coords) {
+        await applyCoords({
+          latitude: lastKnown.coords.latitude,
+          longitude: lastKnown.coords.longitude,
+        });
+      }
+
+      const current = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      if (current?.coords) {
+        await applyCoords({
+          latitude: current.coords.latitude,
+          longitude: current.coords.longitude,
+        });
+      }
+
+      watchSubscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: 5000,
+          distanceInterval: 10,
+        },
+        (position) => {
+          const coords = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          };
+          dispatch({ type: 'SET_DRIVER_COORDS', value: coords });
+          maybeSyncLocation(coords).catch(() => undefined);
+        }
+      );
+    };
+
+    startTracking().catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+      watchSubscription?.remove();
+    };
+  }, [hydrated, state.driverId, state.availability, appState]);
 
   useEffect(() => {
     if (!hydrated || !state.driverId) return;
@@ -619,7 +908,11 @@ export const DriverProvider = ({ children }: { children: React.ReactNode }) => {
         if (!driverId) return;
         const next = !state.availability;
         try {
-          await updateDriverAvailability(driverId, { is_available: next });
+          await updateDriverAvailability(driverId, {
+            is_available: next,
+            latitude: state.driverLatitude ?? undefined,
+            longitude: state.driverLongitude ?? undefined,
+          });
           dispatch({ type: 'SET_AVAILABILITY', value: next });
         } catch {
           return;
@@ -695,7 +988,15 @@ export const DriverProvider = ({ children }: { children: React.ReactNode }) => {
 
       dispatch(action);
     },
-    [state.driverId, state.availability, state.jobs, refreshJobs, refreshRemoteInbox]
+    [
+      state.driverId,
+      state.availability,
+      state.driverLatitude,
+      state.driverLongitude,
+      state.jobs,
+      refreshJobs,
+      refreshRemoteInbox,
+    ]
   );
 
   const refreshJobsNow = useCallback(

@@ -14,14 +14,17 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing } from '@/constants/driverTheme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
 import { transitionJob, uploadJobMedia } from '@/lib/api';
+import { getDriverPalette } from '@/lib/driverAppearance';
 
 const slots = [0, 1, 2, 3, 4, 5];
 
 export default function BeforeImagesScreen() {
   const router = useRouter();
   const { state, dispatch, refreshJobsNow } = useDriverStore();
+  const palette = getDriverPalette(useColorScheme());
   const [uploadingCount, setUploadingCount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
@@ -108,22 +111,22 @@ export default function BeforeImagesScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: palette.background }]}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Ajoutez 6 photos du vehicule avant le lavage (camera ou galerie)</Text>
+        <Text style={[styles.title, { color: palette.text }]}>Ajoutez 6 photos du vehicule avant le lavage (camera ou galerie)</Text>
 
         <View style={styles.grid}>
           {slots.map((slot) => {
             const uri = photos[slot];
             return (
-              <TouchableOpacity key={slot} style={styles.photoCard} onPress={() => pickImage(slot)}>
+              <TouchableOpacity key={slot} style={[styles.photoCard, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]} onPress={() => pickImage(slot)}>
                 {uri ? <Image source={{ uri }} style={styles.photo} /> : null}
                 <View style={[styles.slotBadge, uri && styles.slotBadgeFilled]}>
-                  <Text style={[styles.slotBadgeText, uri && styles.slotBadgeTextFilled]}>
+                  <Text style={[styles.slotBadgeText, { color: palette.text }, uri && styles.slotBadgeTextFilled]}>
                     {slot + 1}/6
                   </Text>
                 </View>
-                <View style={styles.refreshIcon}>
+                <View style={[styles.refreshIcon, { backgroundColor: palette.surface, borderColor: palette.border }]}>
                   <Ionicons name="camera" size={16} color={DriverColors.primary} />
                 </View>
               </TouchableOpacity>
@@ -133,9 +136,9 @@ export default function BeforeImagesScreen() {
 
         <View style={styles.progressRow}>
           <View style={styles.progressBadge}>
-            <Text style={styles.progressText}>{Math.min(6, progress)}/6</Text>
+            <Text style={[styles.progressText, { color: palette.text }]}>{Math.min(6, progress)}/6</Text>
           </View>
-          <Text style={styles.progressHint}>Ajoutez 6 photos claires montrant l etat du vehicule avant le lavage.</Text>
+          <Text style={[styles.progressHint, { color: palette.textMuted }]}>Ajoutez 6 photos claires montrant l etat du vehicule avant le lavage.</Text>
         </View>
 
         <TouchableOpacity

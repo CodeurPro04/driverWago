@@ -3,8 +3,10 @@ import { SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } fr
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing } from '@/constants/driverTheme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
 import { useScreenRefresh } from '@/hooks/useScreenRefresh';
+import { getDriverPalette } from '@/lib/driverAppearance';
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
   accepted: { label: 'Mission acceptee', color: '#1D4ED8', bg: '#DBEAFE' },
@@ -16,6 +18,7 @@ const STATUS_META: Record<string, { label: string; color: string; bg: string }> 
 export default function MissionsScreen() {
   const router = useRouter();
   const { state } = useDriverStore();
+  const palette = getDriverPalette(useColorScheme());
   useScreenRefresh({ jobs: true, intervalMs: 12000 });
   const isApproved = state.profileStatus === 'approved';
 
@@ -38,25 +41,25 @@ export default function MissionsScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: palette.background }]}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Text style={styles.title}>Missions</Text>
-          <Text style={styles.subtitle}>Suivez votre mission active en temps reel.</Text>
+          <Text style={[styles.title, { color: palette.text }]}>Missions</Text>
+          <Text style={[styles.subtitle, { color: palette.textMuted }]}>Suivez votre mission active en temps reel.</Text>
         </View>
 
-        <View style={styles.ruleCard}>
+        <View style={[styles.ruleCard, { backgroundColor: palette.primaryMuted, borderColor: palette.primaryBorder }]}>
           <Ionicons name="shield-checkmark" size={16} color={DriverColors.primary} />
-          <Text style={styles.ruleText}>
+          <Text style={[styles.ruleText, { color: palette.isDark ? '#BFDBFE' : '#1E3A8A' }]}>
             Une seule mission peut etre active a la fois. Seul le client peut annuler la mission, et apres demarrage du lavage, aucune annulation n est possible.
           </Text>
         </View>
 
         {!isApproved ? (
-          <View style={styles.emptyCard}>
+          <View style={[styles.emptyCard, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
             <Ionicons name="hourglass-outline" size={24} color={DriverColors.primary} />
-            <Text style={styles.emptyTitle}>Compte en attente de validation</Text>
-            <Text style={styles.emptyText}>
+            <Text style={[styles.emptyTitle, { color: palette.text }]}>Compte en attente de validation</Text>
+            <Text style={[styles.emptyText, { color: palette.textMuted }]}>
               Vous ne pouvez pas voir les missions tant que l administrateur n a pas valide votre dossier.
             </Text>
             <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/account/review')}>
@@ -65,30 +68,30 @@ export default function MissionsScreen() {
           </View>
         ) : !currentMission ? (
           <>
-            <View style={styles.emptyCard}>
+            <View style={[styles.emptyCard, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
               <Ionicons name="briefcase-outline" size={24} color={DriverColors.primary} />
-              <Text style={styles.emptyTitle}>Aucune mission en cours</Text>
-              <Text style={styles.emptyText}>Acceptez une nouvelle demande pour commencer.</Text>
+              <Text style={[styles.emptyTitle, { color: palette.text }]}>Aucune mission en cours</Text>
+              <Text style={[styles.emptyText, { color: palette.textMuted }]}>Acceptez une nouvelle demande pour commencer.</Text>
               <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/(tabs)/jobs')}>
                 <Text style={styles.primaryButtonText}>Voir les demandes</Text>
               </TouchableOpacity>
             </View>
 
             {latestCancelledJob ? (
-              <View style={styles.cancelledCard}>
+              <View style={[styles.cancelledCard, { backgroundColor: palette.dangerMuted, borderColor: palette.dangerBorder }]}>
                 <View style={styles.cancelledHeader}>
                   <Ionicons name="close-circle" size={16} color="#B91C1C" />
                   <Text style={styles.cancelledTitle}>Commande annulée par le client</Text>
                 </View>
-                <Text style={styles.cancelledCustomer}>{latestCancelledJob.customerName}</Text>
-                <Text style={styles.cancelledMeta}>
+                <Text style={[styles.cancelledCustomer, { color: palette.text }]}>{latestCancelledJob.customerName}</Text>
+                <Text style={[styles.cancelledMeta, { color: palette.dangerText }]}>
                   {latestCancelledJob.service} - {latestCancelledJob.vehicle}
                 </Text>
-                <Text style={styles.cancelledMeta} numberOfLines={2}>
+                <Text style={[styles.cancelledMeta, { color: palette.dangerText }]} numberOfLines={2}>
                   {latestCancelledJob.address}
                 </Text>
                 <TouchableOpacity
-                  style={styles.cancelledAction}
+                  style={[styles.cancelledAction, { backgroundColor: palette.isDark ? '#4A1D21' : '#FEE2E2', borderColor: palette.dangerBorder }]}
                   onPress={() => router.push({ pathname: '/job-details', params: { id: latestCancelledJob.id } })}
                 >
                   <Text style={styles.cancelledActionText}>Voir commande annulée</Text>
@@ -97,9 +100,9 @@ export default function MissionsScreen() {
             ) : null}
           </>
         ) : (
-          <View style={styles.missionCard}>
+          <View style={[styles.missionCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
             <View style={styles.cardTop}>
-              <Text style={styles.customerName}>{currentMission.customerName}</Text>
+              <Text style={[styles.customerName, { color: palette.text }]}>{currentMission.customerName}</Text>
               <View
                 style={[
                   styles.statusBadge,
@@ -117,30 +120,30 @@ export default function MissionsScreen() {
               </View>
             </View>
 
-            <Text style={styles.serviceText}>
+            <Text style={[styles.serviceText, { color: palette.textMuted }]}>
               {currentMission.service} - {currentMission.vehicle}
             </Text>
 
             <View style={styles.infoRow}>
               <Ionicons name="location" size={14} color={DriverColors.primary} />
-              <Text style={styles.infoText} numberOfLines={2}>
+              <Text style={[styles.infoText, { color: palette.text }]} numberOfLines={2}>
                 {currentMission.address}
               </Text>
             </View>
             <View style={styles.infoRow}>
               <Ionicons name="time" size={14} color={DriverColors.primary} />
-              <Text style={styles.infoText}>
+              <Text style={[styles.infoText, { color: palette.text }]}>
                 {currentMission.scheduledAt} - {currentMission.etaMin} min
               </Text>
             </View>
             <View style={styles.infoRow}>
               <Ionicons name="cash" size={14} color={DriverColors.primary} />
-              <Text style={styles.infoText}>{currentMission.price.toLocaleString()} F CFA</Text>
+              <Text style={[styles.infoText, { color: palette.text }]}>{currentMission.price.toLocaleString()} F CFA</Text>
             </View>
 
             <View style={styles.actionRow}>
-              <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push({ pathname: '/job-details', params: { id: currentMission.id } })}>
-                <Text style={styles.secondaryButtonText}>Voir details</Text>
+              <TouchableOpacity style={[styles.secondaryButton, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]} onPress={() => router.push({ pathname: '/job-details', params: { id: currentMission.id } })}>
+                <Text style={[styles.secondaryButtonText, { color: palette.text }]}>Voir details</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/(tabs)/active')}>
                 <Text style={styles.primaryButtonText}>Continuer</Text>

@@ -14,15 +14,23 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
-import * as Linking from 'expo-linking';
-import { DriverColors, DriverRadius, DriverSpacing } from '@/constants/driverTheme';
+import { DriverColors, DriverSpacing } from '@/constants/driverTheme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
-import { ApiError, buildOAuthStartUrl, completeOAuth, loginWithEmail, registerWithEmail } from '@/lib/api';
-
-WebBrowser.maybeCompleteAuthSession();
+import { DriverAccountType } from '@/lib/driverAccount';
+import { ApiError, loginWithEmail, registerWithEmail } from '@/lib/api';
 
 type AuthMode = 'login' | 'register';
+
+type RegisterField = {
+  key: string;
+  placeholder: string;
+  value: string;
+  onChangeText: (value: string) => void;
+  keyboardType?: 'default' | 'phone-pad';
+  withPhonePrefix?: boolean;
+  hint?: string;
+};
 
 const MAX_FAILS = 5;
 const LOCK_SECONDS = 180;
@@ -41,55 +49,96 @@ const validateStrongPassword = (value: string) => {
 const normalizePhoneDigits = (value: string) => value.replace(/\D/g, '').slice(0, 10);
 const isValidIvorianPhone = (value: string) => /^(01|05|07)\d{8}$/.test(value);
 
-const secureRandomState = () => {
-  const seed = `${Date.now()}-${Math.random()}-${Math.random()}`;
-  return seed.replace(/[^a-zA-Z0-9]/g, '').slice(0, 32);
-};
-
 const getPostAuthRoute = (user: {
   account_step?: number;
   profile_status?: string;
   documents_status?: string;
-}): '/(tabs)' | '/account/profile' | '/account/location' | '/account/legal' | '/account/documents' | '/account/review' => {
+}): '/(tabs)' | '/account/profile' | '/account/location' | '/account/legal' | '/account/documents' | '/account/pricing' | '/account/review' => {
   const step = Number(user.account_step || 0);
   const profileStatus = user.profile_status || 'pending';
   const documentsStatus = user.documents_status || 'pending';
 
-  if ((profileStatus === 'approved' && step >= 8) || (documentsStatus === 'submitted' && step >= 6)) return '/(tabs)';
+  if ((profileStatus === 'approved' && step >= 8) || (documentsStatus === 'submitted' && step >= 7)) return '/(tabs)';
   if (step <= 2) return '/account/profile';
   if (step === 3) return '/account/location';
   if (step === 4) return '/account/legal';
   if (step === 5) return '/account/documents';
+  if (step === 6) return '/account/pricing';
   return '/account/review';
 };
 
 export default function DriverAuthScreen() {
   const router = useRouter();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const { dispatch, refreshJobsNow } = useDriverStore();
   const [mode, setMode] = useState<AuthMode>('login');
+  const [accountType, setAccountType] = useState<DriverAccountType>('independent');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [companyName, setCompanyName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
-  const [oauthLoading, setOauthLoading] = useState<'google' | 'apple' | null>(null);
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockedUntil, setLockedUntil] = useState<number | null>(null);
 
   const isLocked = lockedUntil !== null && Date.now() < lockedUntil;
   const lockRemaining = isLocked ? Math.ceil((lockedUntil - Date.now()) / 1000) : 0;
 
+  const isCompany = accountType === 'company';
+
+  const registerFields = useMemo<RegisterField[]>(() => {
+    const phoneField: RegisterField = {
+      key: 'phone',
+      placeholder: '07 12 34 56 78',
+      value: phone,
+      onChangeText: (value) => setPhone(normalizePhoneDigits(value)),
+      keyboardType: 'phone-pad',
+      withPhonePrefix: true,
+    };
+
+    if (isCompany) {
+      return [
+        {
+          key: 'company_name',
+          placeholder: "Nom de l entreprise",
+          value: companyName,
+          onChangeText: setCompanyName,
+        },
+        phoneField,
+      ];
+    }
+
+    return [
+      {
+        key: 'first_name',
+        placeholder: 'Prenom',
+        value: firstName,
+        onChangeText: setFirstName,
+      },
+      {
+        key: 'last_name',
+        placeholder: 'Nom',
+        value: lastName,
+        onChangeText: setLastName,
+      },
+      phoneField,
+    ];
+  }, [companyName, firstName, isCompany, lastName, phone]);
+
   const canSubmit = useMemo(() => {
-    if (loading || oauthLoading || isLocked) return false;
+    if (loading || isLocked) return false;
     if (!isValidEmail(email)) return false;
     if (!password) return false;
-    if (mode === 'register' && (!firstName.trim() || !lastName.trim())) return false;
-    if (mode === 'register' && !isValidIvorianPhone(phone)) return false;
     if (mode === 'register' && password !== confirmPassword) return false;
+    if (mode === 'register' && isCompany && !companyName.trim()) return false;
+    if (mode === 'register' && !isCompany && (!firstName.trim() || !lastName.trim())) return false;
+    if (mode === 'register' && !isValidIvorianPhone(phone)) return false;
     return true;
-  }, [loading, oauthLoading, isLocked, email, password, mode, firstName, lastName, phone, confirmPassword]);
+  }, [loading, isLocked, email, password, mode, confirmPassword, isCompany, companyName, firstName, lastName, phone]);
 
   const applyDriverSession = async (session: any) => {
     const user = session.user;
@@ -97,13 +146,17 @@ export default function DriverAuthScreen() {
       type: 'SET_DRIVER_SESSION',
       value: {
         id: user.id,
-        name: user.first_name || user.name || 'Laveur',
+        name: user.first_name || user.company_name || user.name || 'Laveur',
         phone: user.phone || '',
         isAvailable: Boolean(user.is_available),
+        accountType: user.driver_account_type || 'independent',
+        companyName: user.company_name || '',
+        managerName: user.manager_name || '',
         accountStep: user.account_step ?? 0,
         profileStatus: (user.profile_status || 'pending') as 'pending' | 'approved' | 'rejected',
         documents: (user.documents as Record<string, string | null>) || {},
         documentsStatus: (user.documents_status || 'pending') as 'pending' | 'submitted' | 'approved' | 'rejected',
+        pricing: user.pricing || undefined,
         rating: Number(user.rating ?? 0),
       },
     });
@@ -134,13 +187,16 @@ export default function DriverAuthScreen() {
         mode === 'login'
           ? await loginWithEmail({ email: email.trim().toLowerCase(), password, role: 'driver' })
           : await registerWithEmail({
-              first_name: firstName.trim(),
-              last_name: lastName.trim(),
+              first_name: isCompany ? undefined : firstName.trim(),
+              last_name: isCompany ? undefined : lastName.trim(),
+              company_name: isCompany ? companyName.trim() : undefined,
               email: email.trim().toLowerCase(),
               password,
-              phone: phone,
+              phone,
               role: 'driver',
+              driver_account_type: accountType,
             });
+
       await applyDriverSession(session);
     } catch (error) {
       if (error instanceof ApiError) {
@@ -158,6 +214,7 @@ export default function DriverAuthScreen() {
         Alert.alert('Erreur', error.message || 'Impossible de finaliser la connexion.');
         return;
       }
+
       const message = error instanceof Error && error.message ? error.message : 'Connexion au backend impossible.';
       Alert.alert('Erreur reseau', message);
     } finally {
@@ -165,150 +222,152 @@ export default function DriverAuthScreen() {
     }
   };
 
-  const handleOAuth = async (provider: 'google' | 'apple') => {
-    if (loading || oauthLoading) return;
-
-    const state = secureRandomState();
-    const redirectUri = Linking.createURL('/account/callback');
-    const authUrl = buildOAuthStartUrl(provider, redirectUri, state);
-
-    setOauthLoading(provider);
-    try {
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
-      if (result.type !== 'success' || !result.url) return;
-
-      const parsed = Linking.parse(result.url);
-      const params = parsed.queryParams || {};
-
-      if (params.state !== state) {
-        throw new Error('invalid_oauth_state');
-      }
-
-      const code = typeof params.code === 'string' ? params.code : null;
-      const idToken = typeof params.id_token === 'string' ? params.id_token : null;
-      const accessToken = typeof params.access_token === 'string' ? params.access_token : null;
-
-      if (!code && !idToken && !accessToken) {
-        throw new Error('missing_oauth_token');
-      }
-
-      const session = await completeOAuth({
-        provider,
-        code,
-        id_token: idToken,
-        access_token: accessToken,
-        redirect_uri: redirectUri,
-        state,
-      });
-      await applyDriverSession(session);
-    } catch {
-      Alert.alert('Connexion impossible', `Echec de connexion ${provider === 'google' ? 'Google' : 'Apple'}.`);
-    } finally {
-      setOauthLoading(null);
+  const renderField = (field: RegisterField) => {
+    if (field.withPhonePrefix) {
+      return (
+        <View key={field.key} style={styles.fieldGroup}>
+          <Text style={[styles.fieldLabel, isDark && styles.textWhite]}>Telephone</Text>
+          <View style={styles.phoneRow}>
+            <View style={[styles.countryPrefix, isDark && styles.inputDark]}>
+              <Text style={[styles.countryPrefixText, isDark && styles.textWhite]}>+225</Text>
+            </View>
+            <TextInput
+              style={[styles.phoneInput, isDark && styles.inputDark]}
+              placeholder={field.placeholder}
+              placeholderTextColor={DriverColors.muted}
+              keyboardType={field.keyboardType}
+              value={field.value}
+              onChangeText={field.onChangeText}
+              maxLength={10}
+            />
+          </View>
+          {field.hint ? <Text style={[styles.phoneHint, isDark && styles.textMutedDark]}>{field.hint}</Text> : null}
+        </View>
+      );
     }
+
+    return (
+      <View key={field.key} style={styles.fieldGroup}>
+        <Text style={[styles.fieldLabel, isDark && styles.textWhite]}>{field.placeholder}</Text>
+        <TextInput
+          style={[styles.input, isDark && styles.inputDark]}
+          placeholder={field.placeholder}
+          placeholderTextColor={DriverColors.muted}
+          value={field.value}
+          onChangeText={field.onChangeText}
+          keyboardType={field.keyboardType}
+        />
+      </View>
+    );
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, isDark && styles.containerDark]}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <Text style={styles.title}>Connexion Laveur</Text>
-          <Text style={styles.subtitle}>Connectez-vous avec Email, Google ou Apple.</Text>
-
-          <View style={styles.modeRow}>
-            <TouchableOpacity style={[styles.modeButton, mode === 'login' && styles.modeButtonActive]} onPress={() => setMode('login')}>
-              <Text style={[styles.modeText, mode === 'login' && styles.modeTextActive]}>Connexion</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.modeButton, mode === 'register' && styles.modeButtonActive]} onPress={() => setMode('register')}>
-              <Text style={[styles.modeText, mode === 'register' && styles.modeTextActive]}>Inscription</Text>
-            </TouchableOpacity>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <View style={[styles.hero, isDark && styles.heroDark]}>
+            <View style={styles.heroGlowLarge} />
+            <View style={styles.heroGlowSmall} />
+            <View style={styles.heroBadge}>
+              <Ionicons name="car-sport-outline" size={16} color="#D7F7E7" />
+              <Text style={styles.heroBadgeText}>ZIWAGO</Text>
+            </View>
+            <Text style={styles.heroTitle}>Votre espace chauffeur, plus clair et plus rapide.</Text>
+            <Text style={styles.heroSubtitle}>
+              Connectez-vous ou creez un compte professionnel en tant que laveur independant ou entreprise.
+            </Text>
           </View>
 
-          {mode === 'register' ? (
-            <>
-              <TextInput
-                style={styles.input}
-                placeholder="Prenom"
-                placeholderTextColor={DriverColors.muted}
-                value={firstName}
-                onChangeText={setFirstName}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Nom"
-                placeholderTextColor={DriverColors.muted}
-                value={lastName}
-                onChangeText={setLastName}
-              />
-              <View style={styles.phoneRow}>
-                <View style={styles.countryPrefix}>
-                  <Text style={styles.countryPrefixText}>+225</Text>
+          <View style={[styles.card, isDark && styles.cardDark]}>
+            <View style={[styles.modeRow, isDark && styles.modeRowDark]}>
+              <TouchableOpacity style={[styles.modeButton, mode === 'login' && styles.modeButtonActive]} onPress={() => setMode('login')}>
+                <Text style={[styles.modeText, isDark && styles.modeTextDark, mode === 'login' && styles.modeTextActive]}>Connexion</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modeButton, mode === 'register' && styles.modeButtonActive]} onPress={() => setMode('register')}>
+                <Text style={[styles.modeText, isDark && styles.modeTextDark, mode === 'register' && styles.modeTextActive]}>Inscription</Text>
+              </TouchableOpacity>
+            </View>
+
+            {mode === 'register' ? (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Text style={[styles.sectionTitle, isDark && styles.textWhite]}>Type de compte</Text>
+                  <Text style={[styles.sectionHint, isDark && styles.textMutedDark]}>Choisissez le profil adapte a votre activite.</Text>
                 </View>
+
+                <View style={styles.accountTypeRow}>
+                  <TouchableOpacity
+                    style={[styles.accountTypeButton, isDark && styles.accountTypeButtonDark, !isCompany && styles.accountTypeButtonActive]}
+                    onPress={() => setAccountType('independent')}
+                  >
+                    <Ionicons name="person-outline" size={18} color={!isCompany ? DriverColors.primary : DriverColors.muted} />
+                    <Text style={[styles.accountTypeTitle, isDark && styles.textWhite, !isCompany && styles.accountTypeTitleActive]}>Independant</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.accountTypeButton, isDark && styles.accountTypeButtonDark, isCompany && styles.accountTypeButtonActive]}
+                    onPress={() => setAccountType('company')}
+                  >
+                    <Ionicons name="business-outline" size={18} color={isCompany ? DriverColors.primary : DriverColors.muted} />
+                    <Text style={[styles.accountTypeTitle, isDark && styles.textWhite, isCompany && styles.accountTypeTitleActive]}>Entreprise</Text>
+                  </TouchableOpacity>
+                </View>
+                {registerFields.map(renderField)}
+              </>
+            ) : null}
+
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, isDark && styles.textWhite]}>{mode === 'login' ? 'Acces au compte' : 'Identifiants du compte'}</Text>
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.fieldLabel, isDark && styles.textWhite]}>Adresse email</Text>
+              <TextInput
+                style={[styles.input, isDark && styles.inputDark]}
+                placeholder="nom@exemple.com"
+                placeholderTextColor={DriverColors.muted}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                value={email}
+                onChangeText={setEmail}
+              />
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.fieldLabel, isDark && styles.textWhite]}>Mot de passe</Text>
+              <TextInput
+                style={[styles.input, isDark && styles.inputDark]}
+                placeholder="Mot de passe"
+                placeholderTextColor={DriverColors.muted}
+                secureTextEntry
+                autoCapitalize="none"
+                value={password}
+                onChangeText={setPassword}
+              />
+            </View>
+
+            {mode === 'register' ? (
+              <View style={styles.fieldGroup}>
+                <Text style={[styles.fieldLabel, isDark && styles.textWhite]}>Confirmation</Text>
                 <TextInput
-                  style={styles.phoneInput}
-                  placeholder="07 12 34 56 78"
+                  style={[styles.input, isDark && styles.inputDark]}
+                  placeholder="Confirmer le mot de passe"
                   placeholderTextColor={DriverColors.muted}
-                  keyboardType="phone-pad"
-                  value={phone}
-                  onChangeText={(v) => setPhone(normalizePhoneDigits(v))}
-                  maxLength={10}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
                 />
               </View>
-              <Text style={styles.phoneHint}>Numero ivoirien: 10 chiffres, commence par 01, 05 ou 07.</Text>
-            </>
-          ) : null}
+            ) : null}
 
-          <TextInput
-            style={styles.input}
-            placeholder="Adresse email"
-            placeholderTextColor={DriverColors.muted}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            value={email}
-            onChangeText={setEmail}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Mot de passe"
-            placeholderTextColor={DriverColors.muted}
-            secureTextEntry
-            autoCapitalize="none"
-            value={password}
-            onChangeText={setPassword}
-          />
-          {mode === 'register' ? (
-            <TextInput
-              style={styles.input}
-              placeholder="Confirmer le mot de passe"
-              placeholderTextColor={DriverColors.muted}
-              secureTextEntry
-              autoCapitalize="none"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-            />
-          ) : null}
+            {isLocked ? <Text style={styles.lockText}>Reessayez dans {lockRemaining}s</Text> : null}
 
-          {isLocked ? <Text style={styles.lockText}>Reessayez dans {lockRemaining}s</Text> : null}
+            <TouchableOpacity style={[styles.primaryButton, !canSubmit && styles.primaryButtonDisabled]} disabled={!canSubmit} onPress={handleEmailSubmit}>
+              {loading ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.primaryText}>{mode === 'login' ? 'Se connecter' : 'Creer mon compte'}</Text>}
+            </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.primaryButton, !canSubmit && styles.primaryButtonDisabled]} disabled={!canSubmit} onPress={handleEmailSubmit}>
-            {loading ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.primaryText}>{mode === 'login' ? 'Se connecter' : 'Creer mon compte'}</Text>}
-          </TouchableOpacity>
-
-          <Text style={styles.divider}>ou</Text>
-
-          <TouchableOpacity style={styles.socialButton} disabled={Boolean(oauthLoading || loading)} onPress={() => handleOAuth('apple')}>
-            <View style={styles.socialButtonContent}>
-              {oauthLoading === 'apple' ? <ActivityIndicator size="small" color="#000" /> : <Ionicons name="logo-apple" size={22} color="#000" />}
-              <Text style={styles.socialText}>Continuer avec Apple</Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.socialButton} disabled={Boolean(oauthLoading || loading)} onPress={() => handleOAuth('google')}>
-            <View style={styles.socialButtonContent}>
-              {oauthLoading === 'google' ? <ActivityIndicator size="small" color="#DB4437" /> : <Ionicons name="logo-google" size={22} color="#DB4437" />}
-              <Text style={styles.socialText}>Continuer avec Google</Text>
-            </View>
-          </TouchableOpacity>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -318,7 +377,10 @@ export default function DriverAuthScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: DriverColors.background,
+    backgroundColor: '#F4F7F5',
+  },
+  containerDark: {
+    backgroundColor: '#050816',
   },
   flex: {
     flex: 1,
@@ -327,86 +389,228 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     padding: DriverSpacing.lg,
     paddingTop: DriverSpacing.xl,
+    paddingBottom: DriverSpacing.xl,
   },
-  title: {
-    fontSize: 24,
+  hero: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 28,
+    padding: 22,
+    marginBottom: 18,
+    backgroundColor: '#144B34',
+  },
+  heroDark: {
+    backgroundColor: '#0A2A1F',
+  },
+  heroGlowLarge: {
+    position: 'absolute',
+    top: -40,
+    right: -20,
+    width: 140,
+    height: 140,
+    borderRadius: 999,
+    backgroundColor: 'rgba(94, 234, 155, 0.16)',
+  },
+  heroGlowSmall: {
+    position: 'absolute',
+    bottom: -22,
+    left: -16,
+    width: 90,
+    height: 90,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  heroBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    marginBottom: 16,
+  },
+  heroBadgeText: {
+    color: '#D7F7E7',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  heroTitle: {
+    fontSize: 28,
+    lineHeight: 34,
     fontWeight: '800',
-    color: DriverColors.text,
+    color: '#FFFFFF',
   },
-  subtitle: {
-    marginTop: 6,
-    marginBottom: DriverSpacing.md,
-    color: DriverColors.muted,
+  heroSubtitle: {
+    marginTop: 10,
     fontSize: 13,
+    lineHeight: 20,
+    color: 'rgba(255,255,255,0.82)',
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 28,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#E5ECE8',
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.06,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 2,
+  },
+  cardDark: {
+    backgroundColor: '#0E1627',
+    borderColor: '#1E293B',
   },
   modeRow: {
     flexDirection: 'row',
-    backgroundColor: DriverColors.surface,
-    borderRadius: DriverRadius.md,
+    backgroundColor: '#F1F5F3',
+    borderRadius: 16,
     padding: 4,
-    marginBottom: DriverSpacing.lg,
+    marginBottom: 18,
+  },
+  modeRowDark: {
+    backgroundColor: '#111C31',
   },
   modeButton: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: DriverRadius.sm,
+    paddingVertical: 12,
+    borderRadius: 12,
   },
   modeButtonActive: {
     backgroundColor: DriverColors.primary,
   },
   modeText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
     color: DriverColors.muted,
+  },
+  modeTextDark: {
+    color: '#E2E8F0',
   },
   modeTextActive: {
     color: '#FFFFFF',
   },
-  input: {
-    height: 48,
-    borderRadius: DriverRadius.md,
-    backgroundColor: DriverColors.surface,
-    paddingHorizontal: 12,
+  sectionHeader: {
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '800',
     color: DriverColors.text,
-    marginBottom: DriverSpacing.md,
+  },
+  sectionHint: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 18,
+    color: DriverColors.muted,
+  },
+  accountTypeRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 18,
+  },
+  accountTypeButton: {
+    flex: 1,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E5ECE8',
+    backgroundColor: '#FAFCFB',
+    padding: 14,
+  },
+  accountTypeButtonDark: {
+    borderColor: '#223047',
+    backgroundColor: '#101B2F',
+  },
+  accountTypeButtonActive: {
+    backgroundColor: '#ECF8F1',
+    borderColor: '#A7D9BC',
+  },
+  accountTypeTitle: {
+    marginTop: 10,
+    fontSize: 14,
+    fontWeight: '800',
+    color: DriverColors.text,
+  },
+  accountTypeTitleActive: {
+    color: DriverColors.primary,
+  },
+  accountTypeCopy: {
+    marginTop: 4,
+    fontSize: 11,
+    lineHeight: 16,
+    color: DriverColors.muted,
+  },
+  fieldGroup: {
+    marginBottom: 14,
+  },
+  fieldLabel: {
+    marginBottom: 7,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#244135',
+  },
+  textWhite: {
+    color: '#FFFFFF',
+  },
+  textMutedDark: {
+    color: '#CBD5E1',
+  },
+  input: {
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: '#F8FAF9',
+    borderWidth: 1,
+    borderColor: '#E1E8E4',
+    paddingHorizontal: 14,
+    color: DriverColors.text,
+    fontSize: 14,
+  },
+  inputDark: {
+    backgroundColor: '#101B2F',
+    borderColor: '#223047',
+    color: '#F8FAFC',
   },
   phoneRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 6,
   },
   countryPrefix: {
-    height: 48,
-    borderRadius: DriverRadius.md,
-    backgroundColor: DriverColors.surface,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: '#F8FAF9',
     borderWidth: 1,
-    borderColor: DriverColors.border,
+    borderColor: '#E1E8E4',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
   },
   countryPrefixText: {
     color: DriverColors.text,
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   phoneInput: {
     flex: 1,
-    height: 48,
-    borderRadius: DriverRadius.md,
-    backgroundColor: DriverColors.surface,
-    paddingHorizontal: 12,
-    color: DriverColors.text,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: '#F8FAF9',
     borderWidth: 1,
-    borderColor: DriverColors.border,
+    borderColor: '#E1E8E4',
+    paddingHorizontal: 14,
+    color: DriverColors.text,
+    fontSize: 14,
   },
   phoneHint: {
     fontSize: 11,
+    lineHeight: 16,
     color: DriverColors.muted,
-    marginBottom: DriverSpacing.md,
+    marginTop: 6,
   },
   lockText: {
     fontSize: 12,
@@ -414,12 +618,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   primaryButton: {
-    marginTop: DriverSpacing.sm,
-    borderRadius: DriverRadius.sm,
+    marginTop: 8,
+    borderRadius: 16,
     backgroundColor: DriverColors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 13,
+    paddingVertical: 15,
   },
   primaryButtonDisabled: {
     backgroundColor: '#9CA3AF',
@@ -427,28 +631,6 @@ const styles = StyleSheet.create({
   primaryText: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '700',
-  },
-  divider: {
-    textAlign: 'center',
-    color: DriverColors.muted,
-    marginVertical: DriverSpacing.lg,
-  },
-  socialButton: {
-    backgroundColor: DriverColors.surface,
-    paddingVertical: 14,
-    borderRadius: DriverRadius.sm,
-    marginBottom: DriverSpacing.sm,
-  },
-  socialButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: DriverSpacing.sm,
-  },
-  socialText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: DriverColors.text,
+    fontWeight: '800',
   },
 });

@@ -3,8 +3,10 @@ import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Ima
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing, DriverTypography } from '@/constants/driverTheme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
 import { useScreenRefresh } from '@/hooks/useScreenRefresh';
+import { getDriverPalette } from '@/lib/driverAppearance';
 
 const FILTERS = [
   { id: 'all', label: 'Tout' },
@@ -27,6 +29,7 @@ const STATUS_META: Record<string, { label: string; bg: string; color: string }> 
 export default function JobsScreen() {
   const router = useRouter();
   const { state, dispatch } = useDriverStore();
+  const palette = getDriverPalette(useColorScheme());
   useScreenRefresh({ jobs: true, intervalMs: 12000 });
   const [filter, setFilter] = useState('all');
 
@@ -53,15 +56,12 @@ export default function JobsScreen() {
   }, [filter, state.jobs, activeJobs, canSeeAvailableJobs, isApproved]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: palette.background }]}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <View>
-            <Text style={styles.title}>Demandes</Text>
-            <Text style={styles.subtitle}>Gérez vos missions en temps réel.</Text>
-          </View>
-          <View style={styles.headerIcon}>
-            <Ionicons name="options" size={18} color={DriverColors.primary} />
+            <Text style={[styles.title, { color: palette.text }]}>Demandes</Text>
+            <Text style={[styles.subtitle, { color: palette.textMuted }]}>Gérez vos missions en temps réel.</Text>
           </View>
         </View>
         <View
@@ -82,31 +82,31 @@ export default function JobsScreen() {
             return (
               <TouchableOpacity
                 key={item.id}
-                style={[styles.filterChip, isActive && styles.filterChipActive]}
+                style={[styles.filterChip, { borderColor: palette.border, backgroundColor: palette.surfaceAlt }, isActive && styles.filterChipActive]}
                 onPress={() => setFilter(item.id)}
               >
-                <Text style={[styles.filterText, isActive && styles.filterTextActive]}>{item.label}</Text>
+                <Text style={[styles.filterText, { color: palette.textMuted }, isActive && styles.filterTextActive]}>{item.label}</Text>
               </TouchableOpacity>
             );
           })}
         </ScrollView>
 
         <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Missions</Text>
-          <Text style={styles.sectionCount}>{filteredJobs.length} au total</Text>
+            <Text style={[styles.sectionTitle, { color: palette.text }]}>Missions</Text>
+          <Text style={[styles.sectionCount, { color: palette.textMuted }]}>{filteredJobs.length} au total</Text>
         </View>
 
         {filteredJobs.length === 0 ? (
-          <View style={styles.emptyCard}>
+          <View style={[styles.emptyCard, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
             <Ionicons name="alert-circle" size={20} color={DriverColors.primary} />
-            <Text style={styles.emptyTitle}>
+            <Text style={[styles.emptyTitle, { color: palette.text }]}>
               {!state.availability
                 ? 'Vous etes hors ligne'
                 : !isApproved
                   ? 'Profil non valide'
                   : 'Aucune mission'}
             </Text>
-            <Text style={styles.emptyText}>
+            <Text style={[styles.emptyText, { color: palette.textMuted }]}>
               {!state.availability
                 ? 'Activez votre disponibilite pour recevoir des demandes.'
                 : !isApproved
@@ -118,7 +118,7 @@ export default function JobsScreen() {
           filteredJobs.map((job) => (
             <TouchableOpacity
               key={job.id}
-              style={styles.card}
+              style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}
               activeOpacity={0.9}
               onPress={() => router.push({ pathname: '/job-details', params: { id: job.id } })}
             >
@@ -128,12 +128,12 @@ export default function JobsScreen() {
                     <Image source={{ uri: job.customerAvatarUrl }} style={styles.avatarImage} />
                   ) : (
                     <View style={styles.avatar}>
-                      <Text style={styles.avatarText}>{job.customerName.charAt(0)}</Text>
+                      <Text style={[styles.avatarText, { color: palette.text }]}>{job.customerName.charAt(0)}</Text>
                     </View>
                   )}
                   <View>
-                  <Text style={styles.cardTitle}>{job.customerName}</Text>
-                  <Text style={styles.cardSubtitle}>{job.service} • {job.vehicle}</Text>
+                  <Text style={[styles.cardTitle, { color: palette.text }]}>{job.customerName}</Text>
+                  <Text style={[styles.cardSubtitle, { color: palette.textMuted }]}>{job.service} • {job.vehicle}</Text>
                   </View>
                 </View>
                 <View style={styles.headerRight}>
@@ -158,11 +158,11 @@ export default function JobsScreen() {
 
               <View style={styles.cardRow}>
                 <Ionicons name="location" size={14} color={DriverColors.primary} />
-                <Text style={styles.cardAddress} numberOfLines={2}>{job.address}</Text>
+                <Text style={[styles.cardAddress, { color: palette.text }]} numberOfLines={2}>{job.address}</Text>
               </View>
               <View style={styles.cardRow}>
                 <Ionicons name="time" size={14} color={DriverColors.primary} />
-                <Text style={styles.cardMeta}>{job.scheduledAt} • {job.etaMin} min</Text>
+                <Text style={[styles.cardMeta, { color: palette.textMuted }]}>{job.scheduledAt} • {job.etaMin} min</Text>
               </View>
 
               {job.status === 'pending' ? (
@@ -185,7 +185,7 @@ export default function JobsScreen() {
                 </View>
               ) : (
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailText}>Détails</Text>
+                  <Text style={[styles.detailText, { color: palette.text }]}>Détails</Text>
                   <Ionicons name="chevron-forward" size={14} color={DriverColors.primary} />
                 </View>
               )}

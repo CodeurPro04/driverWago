@@ -4,17 +4,21 @@ import { Ionicons } from '@expo/vector-icons';
 import { Platform } from 'react-native';
 
 import { DriverColors } from '@/constants/driverTheme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getDriverPalette } from '@/lib/driverAppearance';
 
 export default function TabLayout() {
+  const palette = getDriverPalette(useColorScheme());
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: DriverColors.primary,
-        tabBarInactiveTintColor: DriverColors.muted,
+        tabBarInactiveTintColor: palette.textMuted,
         tabBarStyle: {
-          backgroundColor: DriverColors.surface,
-          borderTopColor: DriverColors.border,
+          backgroundColor: palette.surface,
+          borderTopColor: palette.border,
           height: Platform.OS === 'ios' ? 92 : 84,
           paddingTop: 6,
           paddingBottom: Platform.OS === 'ios' ? 20 : 14,

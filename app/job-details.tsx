@@ -14,10 +14,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DriverColors, DriverRadius, DriverSpacing } from '@/constants/driverTheme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
 import DriverSafeMap, { DriverMapRegion } from '@/components/DriverSafeMap';
 import { useScreenRefresh } from '@/hooks/useScreenRefresh';
 import { useDriverNavigation } from '@/hooks/useDriverNavigation';
+import { getDriverPalette } from '@/lib/driverAppearance';
 
 const DEFAULT_REGION: DriverMapRegion = {
   latitude: 5.3364,
@@ -41,6 +43,8 @@ export default function JobDetailsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { state, dispatch } = useDriverStore();
+  const palette = getDriverPalette(useColorScheme());
+  const accentIconColor = palette.isDark ? palette.text : DriverColors.primary;
   useScreenRefresh({ jobs: true, intervalMs: 10000 });
   const [mapRegionOverride, setMapRegionOverride] = useState<DriverMapRegion | null>(null);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
@@ -116,11 +120,11 @@ export default function JobDetailsScreen() {
 
   if (!job) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: palette.background }]}>
         <View style={styles.emptyWrap}>
-          <Ionicons name="alert-circle" size={40} color={DriverColors.primary} />
-          <Text style={styles.emptyTitle}>Mission introuvable</Text>
-          <Text style={styles.emptyText}>Cette mission n existe plus ou a deja ete retiree.</Text>
+          <Ionicons name="alert-circle" size={40} color={accentIconColor} />
+          <Text style={[styles.emptyTitle, { color: palette.text }]}>Mission introuvable</Text>
+          <Text style={[styles.emptyText, { color: palette.textMuted }]}>Cette mission n existe plus ou a deja ete retiree.</Text>
           <TouchableOpacity style={styles.primaryButton} onPress={() => router.back()}>
             <Text style={styles.primaryButtonText}>Retour</Text>
           </TouchableOpacity>
@@ -130,7 +134,7 @@ export default function JobDetailsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: palette.background }]}>
       <View style={styles.mapSection}>
         <DriverSafeMap
           style={styles.map}
@@ -148,14 +152,14 @@ export default function JobDetailsScreen() {
         />
 
         <View style={styles.topActions}>
-          <TouchableOpacity style={styles.iconButton} onPress={() => router.back()}>
-            <Ionicons name="chevron-back" size={18} color={DriverColors.primary} />
+          <TouchableOpacity style={[styles.iconButton, { backgroundColor: palette.surface, borderColor: palette.border }]} onPress={() => router.back()}>
+            <Ionicons name="chevron-back" size={18} color={accentIconColor} />
           </TouchableOpacity>
           <View style={[styles.statusBadge, { backgroundColor: statusMeta.bg }]}>
             <Text style={[styles.statusText, { color: statusMeta.color }]}>{statusMeta.label}</Text>
           </View>
-          <TouchableOpacity style={styles.iconButton} onPress={focusDestination}>
-            <Ionicons name="locate" size={18} color={DriverColors.primary} />
+          <TouchableOpacity style={[styles.iconButton, { backgroundColor: palette.surface, borderColor: palette.border }]} onPress={focusDestination}>
+            <Ionicons name="locate" size={18} color={accentIconColor} />
           </TouchableOpacity>
         </View>
 
@@ -164,69 +168,69 @@ export default function JobDetailsScreen() {
             <Ionicons name="navigate" size={16} color="#FFFFFF" />
             <Text style={styles.quickActionPrimaryText}>Naviguer</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.quickActionSecondary} onPress={callCustomer}>
-            <Ionicons name="call" size={16} color={DriverColors.primary} />
-            <Text style={styles.quickActionSecondaryText}>Appeler</Text>
+          <TouchableOpacity style={[styles.quickActionSecondary, { backgroundColor: palette.surface, borderColor: palette.border }]} onPress={callCustomer}>
+            <Ionicons name="call" size={16} color={accentIconColor} />
+            <Text style={[styles.quickActionSecondaryText, { color: accentIconColor }]}>Appeler</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.sheet} showsVerticalScrollIndicator={false}>
-        <View style={styles.identityCard}>
+      <ScrollView contentContainerStyle={[styles.sheet, { backgroundColor: palette.background }]} showsVerticalScrollIndicator={false}>
+        <View style={[styles.identityCard, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
           <View style={styles.identityHeader}>
             {job.customerAvatarUrl ? (
               <Image source={{ uri: job.customerAvatarUrl }} style={styles.avatarImage} />
             ) : (
-              <View style={styles.avatarFallback}>
-                <Text style={styles.avatarText}>{job.customerName.charAt(0)}</Text>
+              <View style={[styles.avatarFallback, { backgroundColor: palette.surfaceMuted }]}>
+                <Text style={[styles.avatarText, { color: palette.textMuted }]}>{job.customerName.charAt(0)}</Text>
               </View>
             )}
             <View style={styles.identityBody}>
-              <Text style={styles.customerName}>{job.customerName}</Text>
-              <Text style={styles.subInfo}>{job.service}</Text>
+              <Text style={[styles.customerName, { color: palette.text }]}>{job.customerName}</Text>
+              <Text style={[styles.subInfo, { color: palette.textMuted }]}>{job.service}</Text>
             </View>
-            <Text style={styles.priceText}>{job.price.toLocaleString()} F CFA</Text>
+            <Text style={[styles.priceText, { color: palette.text }]}>{job.price.toLocaleString()} F CFA</Text>
           </View>
 
           <View style={styles.infoLine}>
-            <Ionicons name="car" size={14} color={DriverColors.primary} />
-            <Text style={styles.infoText}>{job.vehicle}</Text>
+            <Ionicons name="car" size={14} color={accentIconColor} />
+            <Text style={[styles.infoText, { color: palette.text }]}>{job.vehicle}</Text>
           </View>
           <View style={styles.infoLine}>
-            <Ionicons name="location" size={14} color={DriverColors.primary} />
-            <Text style={styles.infoText}>{job.address}</Text>
+            <Ionicons name="location" size={14} color={accentIconColor} />
+            <Text style={[styles.infoText, { color: palette.text }]}>{job.address}</Text>
           </View>
           <View style={styles.infoLine}>
-            <Ionicons name="time" size={14} color={DriverColors.primary} />
-            <Text style={styles.infoText}>{job.scheduledAt} - {job.etaMin} min</Text>
+            <Ionicons name="time" size={14} color={accentIconColor} />
+            <Text style={[styles.infoText, { color: palette.text }]}>{job.scheduledAt} - {job.etaMin} min</Text>
           </View>
         </View>
 
-        <View style={styles.financeCard}>
+        <View style={[styles.financeCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
           <View style={styles.financeHeader}>
-            <Ionicons name="cash" size={14} color={DriverColors.primary} />
-            <Text style={styles.financeTitle}>Detail financier</Text>
+            <Ionicons name="cash" size={14} color={accentIconColor} />
+            <Text style={[styles.financeTitle, { color: palette.text }]}>Detail financier</Text>
           </View>
           <View style={styles.financeRow}>
-            <Text style={styles.financeLabel}>Montant commande</Text>
-            <Text style={styles.financeValue}>{job.price.toLocaleString()} F CFA</Text>
+            <Text style={[styles.financeLabel, { color: palette.textMuted }]}>Montant commande</Text>
+            <Text style={[styles.financeValue, { color: palette.text }]}>{job.price.toLocaleString()} F CFA</Text>
           </View>
           <View style={styles.financeRow}>
-            <Text style={styles.financeLabel}>Commission ({Math.round(COMMISSION_RATE * 100)}%)</Text>
+            <Text style={[styles.financeLabel, { color: palette.textMuted }]}>Commission ({Math.round(COMMISSION_RATE * 100)}%)</Text>
             <Text style={styles.financeNegative}>- {commissionAmount.toLocaleString()} F CFA</Text>
           </View>
-          <View style={styles.financeDivider} />
+          <View style={[styles.financeDivider, { backgroundColor: palette.border }]} />
           <View style={styles.financeRow}>
-            <Text style={styles.financeNetLabel}>Gain net</Text>
+            <Text style={[styles.financeNetLabel, { color: palette.text }]}>Gain net</Text>
             <Text style={styles.financeNetValue}>{netAmount.toLocaleString()} F CFA</Text>
           </View>
         </View>
 
-        <View style={styles.photosSection}>
-          <Text style={styles.sectionTitle}>Photos mission</Text>
+        <View style={[styles.photosSection, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+          <Text style={[styles.sectionTitle, { color: palette.text }]}>Photos mission</Text>
           {job.beforePhotos?.length ? (
             <>
-              <Text style={styles.photosGroupTitle}>Avant lavage</Text>
+              <Text style={[styles.photosGroupTitle, { color: palette.textMuted }]}>Avant lavage</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photosRow}>
                 {job.beforePhotos.map((uri, index) => (
                   <TouchableOpacity key={`before-${index}`} activeOpacity={0.9} onPress={() => setPreviewUri(uri)}>
@@ -238,7 +242,7 @@ export default function JobDetailsScreen() {
           ) : null}
           {job.afterPhotos?.length ? (
             <>
-              <Text style={styles.photosGroupTitle}>Apres lavage</Text>
+              <Text style={[styles.photosGroupTitle, { color: palette.textMuted }]}>Apres lavage</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photosRow}>
                 {job.afterPhotos.map((uri, index) => (
                   <TouchableOpacity key={`after-${index}`} activeOpacity={0.9} onPress={() => setPreviewUri(uri)}>
@@ -249,14 +253,14 @@ export default function JobDetailsScreen() {
             </>
           ) : null}
           {!job.beforePhotos?.length && !job.afterPhotos?.length ? (
-            <Text style={styles.emptyPhotos}>Aucune photo disponible pour le moment.</Text>
+            <Text style={[styles.emptyPhotos, { color: palette.textMuted }]}>Aucune photo disponible pour le moment.</Text>
           ) : null}
         </View>
 
         {canRespondToRequest ? (
           <View style={styles.actionRow}>
             <TouchableOpacity
-              style={styles.secondaryButton}
+              style={[styles.secondaryButton, { backgroundColor: palette.surfaceMuted, borderColor: palette.border }]}
               onPress={() => {
                 dispatch({ type: 'DECLINE_JOB', id: job.id });
                 router.back();
@@ -278,9 +282,9 @@ export default function JobDetailsScreen() {
             </TouchableOpacity>
           </View>
         ) : (
-          <View style={styles.statusInfoCard}>
-            <Ionicons name="information-circle" size={16} color={DriverColors.primary} />
-            <Text style={styles.statusInfoText}>
+          <View style={[styles.statusInfoCard, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
+            <Ionicons name="information-circle" size={16} color={accentIconColor} />
+            <Text style={[styles.statusInfoText, { color: palette.textMuted }]}>
               {job.status === 'completed'
                 ? 'Mission terminee. Les details restent consultables ici.'
                 : 'Mission deja traitee. Ouvrez Missions pour suivre la course active.'}
@@ -290,7 +294,7 @@ export default function JobDetailsScreen() {
       </ScrollView>
 
       <Modal visible={!!previewUri} transparent animationType="fade" onRequestClose={() => setPreviewUri(null)}>
-        <View style={styles.previewOverlay}>
+        <View style={[styles.previewOverlay, { backgroundColor: palette.overlay }]}>
           <TouchableOpacity style={styles.previewClose} onPress={() => setPreviewUri(null)} activeOpacity={0.85}>
             <Text style={styles.previewCloseText}>Fermer</Text>
           </TouchableOpacity>

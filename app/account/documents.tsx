@@ -5,32 +5,108 @@ import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
-import { ApiError, getUserProfile, submitDriverDocuments, uploadDriverDocument } from '@/lib/api';
-
-const docItems = [
-  { id: 'id', title: 'Carte d\'identite nationale ou passeport' },
-  { id: 'profile', title: 'Photo de profil' },
-  { id: 'license', title: 'Permis de conduire' },
-  { id: 'address', title: 'Justificatif de domicile ou de residence' },
-  { id: 'certificate', title: 'Certificat de bonne conduite' },
-];
+import { ApiError, getUserProfile, updateUserProfile, uploadDriverDocument } from '@/lib/api';
+import { DriverDocumentId, getDriverDocumentItems } from '@/lib/driverAccount';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getDriverPalette } from '@/lib/driverAppearance';
 
 export default function DriverDocumentsScreen() {
   const router = useRouter();
   const { state, dispatch } = useDriverStore();
+  const palette = getDriverPalette(useColorScheme());
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: palette.background,
+    },
+    content: {
+      padding: DriverSpacing.lg,
+      paddingBottom: 40,
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: palette.text,
+      marginBottom: DriverSpacing.lg,
+    },
+    managerBox: {
+      backgroundColor: palette.surfaceAlt,
+      borderWidth: 1,
+      borderColor: palette.border,
+      borderRadius: DriverRadius.md,
+      padding: DriverSpacing.md,
+      marginBottom: DriverSpacing.md,
+    },
+    managerTitle: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: palette.text,
+      marginBottom: 4,
+    },
+    managerValue: {
+      fontSize: 12,
+      color: palette.textMuted,
+    },
+    docRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 14,
+      paddingHorizontal: 14,
+      backgroundColor: palette.surfaceMuted,
+      borderWidth: 1,
+      borderColor: palette.border,
+      borderRadius: DriverRadius.md,
+      marginBottom: 10,
+    },
+    docCopy: {
+      flex: 1,
+      paddingRight: 12,
+    },
+    docRowActive: {
+      backgroundColor: palette.successMuted,
+      borderColor: palette.successBorder,
+    },
+    docRowDisabled: {
+      opacity: 0.6,
+    },
+    docTitle: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: palette.text,
+    },
+    docStatus: {
+      fontSize: 11,
+      color: palette.successText,
+      marginTop: 4,
+    },
+    primaryButton: {
+      marginTop: DriverSpacing.lg,
+      backgroundColor: DriverColors.primary,
+      paddingVertical: 14,
+      borderRadius: 999,
+      alignItems: 'center',
+    },
+    primaryButtonDisabled: {
+      opacity: 0.4,
+    },
+    primaryText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '700',
+    },
+  });
   const documents = state.documents;
   const [uploadingDocId, setUploadingDocId] = useState<string | null>(null);
+  const docItems = useMemo(() => getDriverDocumentItems(state.driverAccountType), [state.driverAccountType]);
 
   useEffect(() => {
-    if (state.profileStatus === 'approved' || (state.accountStep >= 6 && state.documentsStatus === 'submitted')) {
+    if (state.profileStatus === 'approved' || (state.accountStep >= 7 && state.documentsStatus === 'submitted')) {
       router.replace('/(tabs)');
     }
   }, [router, state.accountStep, state.documentsStatus, state.profileStatus]);
 
-  const allUploaded = useMemo(
-    () => docItems.every((doc) => Boolean(documents[doc.id])),
-    [documents]
-  );
+  const allUploaded = useMemo(() => docItems.every((doc) => Boolean(documents[doc.id])), [docItems, documents]);
 
   const syncProfileState = async () => {
     if (!state.driverId) return null;
@@ -39,10 +115,16 @@ export default function DriverDocumentsScreen() {
     dispatch({ type: 'SET_PROFILE_STATUS', value: (profile.user.profile_status || state.profileStatus || 'pending') as any });
     dispatch({ type: 'SET_DOCUMENTS', value: (profile.user.documents as Record<string, string | null>) || {} });
     dispatch({ type: 'SET_DOCUMENTS_STATUS', value: (profile.user.documents_status || state.documentsStatus || 'pending') as any });
+    dispatch({ type: 'SET_DRIVER_ACCOUNT_TYPE', value: (profile.user.driver_account_type || state.driverAccountType) as any });
+    dispatch({ type: 'SET_COMPANY_NAME', value: profile.user.company_name || state.companyName });
+    dispatch({ type: 'SET_MANAGER_NAME', value: profile.user.manager_name || state.managerName });
+    if (profile.user.pricing) {
+      dispatch({ type: 'SET_PRICING', value: profile.user.pricing });
+    }
     return profile;
   };
 
-  const persistDocument = async (id: string, uri: string) => {
+  const persistDocument = async (id: DriverDocumentId, uri: string) => {
     if (uploadingDocId) return;
     const previousUri = documents[id] ?? null;
     dispatch({ type: 'SET_DOCUMENT', id, uri });
@@ -75,7 +157,7 @@ export default function DriverDocumentsScreen() {
     }
   };
 
-  const pickFromLibrary = async (id: string) => {
+  const pickFromLibrary = async (id: DriverDocumentId) => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (permission.status !== 'granted') {
       Alert.alert('Autorisation requise', 'Autorisez la galerie pour importer ce document.');
@@ -91,7 +173,7 @@ export default function DriverDocumentsScreen() {
     await persistDocument(id, result.assets[0].uri);
   };
 
-  const captureWithCamera = async (id: string, forceSelfie = false) => {
+  const captureWithCamera = async (id: DriverDocumentId, forceSelfie = false) => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (permission.status !== 'granted') {
       Alert.alert('Autorisation requise', 'Autorisez la camera pour capturer ce document.');
@@ -108,16 +190,21 @@ export default function DriverDocumentsScreen() {
     await persistDocument(id, result.assets[0].uri);
   };
 
-  const pickDocument = async (id: string) => {
-    if (id === 'profile') {
-      Alert.alert(
-        'Photo de profil',
-        'Prenez un selfie avec la camera frontale. Cette photo deviendra votre photo de profil apres validation du compte.',
-        [
-          { text: 'Annuler', style: 'cancel' },
-          { text: 'Prendre un selfie', onPress: () => captureWithCamera(id, true) },
-        ]
-      );
+  const pickDocument = async (id: DriverDocumentId) => {
+    if (id === 'profile' && state.driverAccountType !== 'company') {
+      Alert.alert('Photo de profil', 'Prenez un selfie avec la camera frontale.', [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Prendre un selfie', onPress: () => captureWithCamera(id, true) },
+      ]);
+      return;
+    }
+
+    if (id === 'manager_photo') {
+      Alert.alert('Photo du gerant', 'Ajoutez un portrait recent du gerant.', [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Camera', onPress: () => captureWithCamera(id, true) },
+        { text: 'Galerie', onPress: () => pickFromLibrary(id) },
+      ]);
       return;
     }
 
@@ -128,20 +215,47 @@ export default function DriverDocumentsScreen() {
     ]);
   };
 
+  const continueToPricing = async () => {
+    if (!allUploaded) {
+      Alert.alert('Documents requis', 'Ajoutez tous les documents obligatoires avant de continuer.');
+      return;
+    }
+
+    if (!state.driverId) {
+      router.push('/account/pricing');
+      return;
+    }
+
+    try {
+      const response = await updateUserProfile(state.driverId, { account_step: 6 });
+      dispatch({ type: 'SET_ACCOUNT_STEP', value: response.user.account_step || 6 });
+      dispatch({ type: 'SET_DOCUMENTS', value: (response.user.documents as Record<string, string | null>) || {} });
+      router.push('/account/pricing');
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : 'Impossible de continuer pour le moment.';
+      Alert.alert('Erreur', message);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Telechargez les documents suivants pour verifier votre identite</Text>
+        <Text style={styles.title}>
+          {state.driverAccountType === 'company'
+            ? 'Telechargez les documents de verification de votre entreprise'
+            : 'Telechargez les documents suivants pour verifier votre identite'}
+        </Text>
+
+        {state.driverAccountType === 'company' ? (
+          <View style={styles.managerBox}>
+            <Text style={styles.managerTitle}>Gerant declare</Text>
+            <Text style={styles.managerValue}>{state.managerName || 'A renseigner dans le profil entreprise'}</Text>
+          </View>
+        ) : null}
 
         {docItems.map((item) => {
           const uri = documents[item.id];
-          const status = uri
-            ? 'Televerse'
-            : item.id === 'profile'
-              ? 'Selfie requis (camera frontale)'
-              : item.id === 'id'
-                ? 'etape suivante recommandee'
-                : '';
+          const status = uri ? 'Televerse' : item.hint || '';
           return (
             <TouchableOpacity
               key={item.id}
@@ -149,12 +263,10 @@ export default function DriverDocumentsScreen() {
               disabled={Boolean(uploadingDocId)}
               onPress={() => pickDocument(item.id)}
             >
-              <View>
+              <View style={styles.docCopy}>
                 <Text style={styles.docTitle}>{item.title}</Text>
                 {status ? (
-                  <Text style={styles.docStatus}>
-                    {uploadingDocId === item.id ? 'Televersement en cours...' : status}
-                  </Text>
+                  <Text style={styles.docStatus}>{uploadingDocId === item.id ? 'Televersement en cours...' : status}</Text>
                 ) : uploadingDocId === item.id ? (
                   <Text style={styles.docStatus}>Televersement en cours...</Text>
                 ) : null}
@@ -167,120 +279,11 @@ export default function DriverDocumentsScreen() {
         <TouchableOpacity
           style={[styles.primaryButton, (!allUploaded || Boolean(uploadingDocId)) && styles.primaryButtonDisabled]}
           disabled={!allUploaded || Boolean(uploadingDocId)}
-          onPress={() => {
-            if (!state.driverId) {
-              router.push('/account/review');
-              return;
-            }
-            submitDriverDocuments(state.driverId)
-              .then((response) => {
-                dispatch({ type: 'SET_ACCOUNT_STEP', value: response.user.account_step || 6 });
-                dispatch({ type: 'SET_PROFILE_STATUS', value: (response.user.profile_status || state.profileStatus || 'pending') as any });
-                dispatch({ type: 'SET_DOCUMENTS', value: (response.user.documents as Record<string, string | null>) || {} });
-                dispatch({ type: 'SET_DOCUMENTS_STATUS', value: (response.user.documents_status || 'submitted') as any });
-                router.replace('/(tabs)');
-              })
-              .catch(async (error) => {
-                try {
-                  const profile = await syncProfileState();
-                  const documentsStatus = profile?.user?.documents_status || state.documentsStatus;
-                  const accountStep = Number(profile?.user?.account_step || state.accountStep || 0);
-                  if (documentsStatus === 'submitted' || accountStep >= 6) {
-                    router.replace('/(tabs)');
-                    return;
-                  }
-                } catch {
-                  // Keep the original submit error below when the sync also fails.
-                }
-
-                const message = error instanceof ApiError ? error.message : 'Soumission impossible. Verifiez les documents puis reessayez.';
-                Alert.alert('Soumission echouee', message);
-              });
-          }}
+          onPress={continueToPricing}
         >
-          <Text style={styles.primaryText}>Soumettre pour examen</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.linkButton}
-          onPress={() => {
-            if (!allUploaded) {
-              Alert.alert('Documents requis', 'Ajoutez tous les documents obligatoires avant de continuer.');
-              return;
-            }
-            router.push('/account/review');
-          }}
-        >
-          <Text style={styles.linkText}>Voir l etat du dossier</Text>
+          <Text style={styles.primaryText}>Continuer vers les tarifs</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: DriverColors.background,
-  },
-  content: {
-    padding: DriverSpacing.lg,
-    paddingBottom: 40,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: DriverColors.text,
-    marginBottom: DriverSpacing.lg,
-  },
-  docRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    backgroundColor: '#F3F4F6',
-    borderRadius: DriverRadius.md,
-    marginBottom: 10,
-  },
-  docRowActive: {
-    backgroundColor: '#E7F6EA',
-  },
-  docRowDisabled: {
-    opacity: 0.6,
-  },
-  docTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: DriverColors.text,
-  },
-  docStatus: {
-    fontSize: 11,
-    color: DriverColors.success,
-    marginTop: 4,
-  },
-  primaryButton: {
-    marginTop: DriverSpacing.lg,
-    backgroundColor: DriverColors.primary,
-    paddingVertical: 14,
-    borderRadius: 999,
-    alignItems: 'center',
-  },
-  primaryButtonDisabled: {
-    opacity: 0.35,
-  },
-  primaryText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  linkButton: {
-    marginTop: DriverSpacing.md,
-    alignItems: 'center',
-  },
-  linkText: {
-    fontSize: 12,
-    color: DriverColors.primary,
-    fontWeight: '600',
-  },
-});

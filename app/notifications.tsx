@@ -5,6 +5,8 @@ import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing, DriverTypography } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
 import { useScreenRefresh } from '@/hooks/useScreenRefresh';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getDriverPalette } from '@/lib/driverAppearance';
 
 const toRelativeTime = (iso: string) => {
   const createdAt = new Date(iso).getTime();
@@ -20,6 +22,128 @@ const toRelativeTime = (iso: string) => {
 export default function NotificationsScreen() {
   const router = useRouter();
   const { state, dispatch } = useDriverStore();
+  const palette = getDriverPalette(useColorScheme());
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: palette.background,
+    },
+    header: {
+      paddingHorizontal: DriverSpacing.lg,
+      paddingTop: DriverSpacing.md,
+      paddingBottom: DriverSpacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: palette.border,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    backButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: palette.iconButton,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    title: {
+      ...DriverTypography.section,
+      color: palette.text,
+    },
+    clearButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: palette.iconButton,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    summaryBar: {
+      paddingHorizontal: DriverSpacing.lg,
+      paddingVertical: 10,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    summaryText: {
+      fontSize: 12,
+      color: palette.textMuted,
+      fontWeight: '600',
+    },
+    summaryAction: {
+      fontSize: 12,
+      color: DriverColors.primary,
+      fontWeight: '700',
+    },
+    content: {
+      paddingHorizontal: DriverSpacing.lg,
+      paddingBottom: DriverSpacing.lg,
+      gap: DriverSpacing.md,
+    },
+    emptyCard: {
+      borderRadius: DriverRadius.md,
+      borderWidth: 1,
+      borderColor: palette.border,
+      backgroundColor: palette.surfaceAlt,
+      padding: DriverSpacing.lg,
+      alignItems: 'center',
+      gap: 8,
+    },
+    emptyTitle: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: palette.text,
+    },
+    emptyBody: {
+      fontSize: 12,
+      color: palette.textMuted,
+      textAlign: 'center',
+      lineHeight: 18,
+    },
+    card: {
+      padding: DriverSpacing.md,
+      borderRadius: DriverRadius.md,
+      borderWidth: 1,
+      borderColor: palette.border,
+      backgroundColor: palette.surface,
+    },
+    cardUnread: {
+      borderColor: palette.primaryBorder,
+      backgroundColor: palette.primaryMuted,
+    },
+    cardHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 6,
+    },
+    cardTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      flex: 1,
+    },
+    unreadDot: {
+      width: 7,
+      height: 7,
+      borderRadius: 4,
+      backgroundColor: DriverColors.primary,
+    },
+    cardTitle: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: palette.text,
+    },
+    cardTime: {
+      fontSize: 11,
+      color: palette.textMuted,
+    },
+    cardBody: {
+      fontSize: 12,
+      color: palette.textMuted,
+      lineHeight: 18,
+    },
+  });
   useScreenRefresh({ inbox: true, intervalMs: 20000 });
 
   const notifications = useMemo(
@@ -35,11 +159,11 @@ export default function NotificationsScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={20} color={DriverColors.text} />
+          <Ionicons name="chevron-back" size={20} color={palette.text} />
         </TouchableOpacity>
         <Text style={styles.title}>Notifications</Text>
         <TouchableOpacity style={styles.clearButton} onPress={() => dispatch({ type: 'MARK_ALL_NOTIFICATIONS_READ' })}>
-          <Ionicons name="checkmark-done" size={18} color={DriverColors.text} />
+          <Ionicons name="checkmark-done" size={18} color={palette.text} />
         </TouchableOpacity>
       </View>
 
@@ -53,7 +177,7 @@ export default function NotificationsScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {notifications.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Ionicons name="notifications-off-outline" size={20} color={DriverColors.muted} />
+            <Ionicons name="notifications-off-outline" size={20} color={palette.textMuted} />
             <Text style={styles.emptyTitle}>Aucune notification</Text>
             <Text style={styles.emptyBody}>Les alerts de solde, depots, retraits et mises a jour apparaitront ici.</Text>
           </View>
@@ -96,124 +220,3 @@ export default function NotificationsScreen() {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: DriverColors.background,
-  },
-  header: {
-    paddingHorizontal: DriverSpacing.lg,
-    paddingTop: DriverSpacing.md,
-    paddingBottom: DriverSpacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: DriverColors.border,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  backButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    ...DriverTypography.section,
-  },
-  clearButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  summaryBar: {
-    paddingHorizontal: DriverSpacing.lg,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  summaryText: {
-    fontSize: 12,
-    color: DriverColors.muted,
-    fontWeight: '600',
-  },
-  summaryAction: {
-    fontSize: 12,
-    color: DriverColors.primary,
-    fontWeight: '700',
-  },
-  content: {
-    paddingHorizontal: DriverSpacing.lg,
-    paddingBottom: DriverSpacing.lg,
-    gap: DriverSpacing.md,
-  },
-  emptyCard: {
-    borderRadius: DriverRadius.md,
-    borderWidth: 1,
-    borderColor: DriverColors.border,
-    backgroundColor: '#F9FAFB',
-    padding: DriverSpacing.lg,
-    alignItems: 'center',
-    gap: 8,
-  },
-  emptyTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: DriverColors.text,
-  },
-  emptyBody: {
-    fontSize: 12,
-    color: DriverColors.muted,
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  card: {
-    padding: DriverSpacing.md,
-    borderRadius: DriverRadius.md,
-    borderWidth: 1,
-    borderColor: DriverColors.border,
-    backgroundColor: '#FFFFFF',
-  },
-  cardUnread: {
-    borderColor: '#BFDBFE',
-    backgroundColor: '#F8FBFF',
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  cardTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flex: 1,
-  },
-  unreadDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: DriverColors.primary,
-  },
-  cardTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: DriverColors.text,
-  },
-  cardTime: {
-    fontSize: 11,
-    color: DriverColors.muted,
-  },
-  cardBody: {
-    fontSize: 12,
-    color: DriverColors.muted,
-    lineHeight: 18,
-  },
-});

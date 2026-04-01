@@ -4,6 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing, DriverTypography } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getDriverPalette } from '@/lib/driverAppearance';
 
 const COMMISSION_RATE = 0.2;
 
@@ -24,6 +26,54 @@ const parseJobDate = (value?: string) => {
 export default function EarningsHistoryScreen() {
   const router = useRouter();
   const { state } = useDriverStore();
+  const palette = getDriverPalette(useColorScheme());
+  const styles = StyleSheet.create({
+    container: { flex: 1, backgroundColor: palette.background },
+    header: {
+      paddingHorizontal: DriverSpacing.lg,
+      paddingTop: DriverSpacing.md,
+      paddingBottom: DriverSpacing.md,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      borderBottomWidth: 1,
+      borderBottomColor: palette.border,
+    },
+    backButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: palette.iconButton,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    title: { ...DriverTypography.section, color: palette.text },
+    placeholder: { width: 36, height: 36 },
+    content: { padding: DriverSpacing.lg, gap: DriverSpacing.sm },
+    emptyCard: {
+      borderRadius: DriverRadius.md,
+      borderWidth: 1,
+      borderColor: palette.border,
+      backgroundColor: palette.surfaceAlt,
+      padding: DriverSpacing.lg,
+      alignItems: 'center',
+    },
+    emptyTitle: { fontSize: 14, fontWeight: '700', color: palette.text },
+    emptyText: { marginTop: 6, fontSize: 12, color: palette.textMuted, textAlign: 'center' },
+    card: {
+      borderRadius: DriverRadius.md,
+      borderWidth: 1,
+      borderColor: palette.border,
+      backgroundColor: palette.surface,
+      padding: DriverSpacing.md,
+    },
+    cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    customer: { fontSize: 14, fontWeight: '700', color: palette.text },
+    net: { fontSize: 13, fontWeight: '800', color: DriverColors.success },
+    meta: { marginTop: 4, fontSize: 12, color: palette.textMuted },
+    breakdown: { marginTop: 8, flexDirection: 'row', justifyContent: 'space-between' },
+    breakdownText: { fontSize: 11, color: palette.text, fontWeight: '600' },
+  });
 
   const completedJobs = useMemo(
     () =>
@@ -79,52 +129,3 @@ export default function EarningsHistoryScreen() {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: DriverColors.background },
-  header: {
-    paddingHorizontal: DriverSpacing.lg,
-    paddingTop: DriverSpacing.md,
-    paddingBottom: DriverSpacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderBottomWidth: 1,
-    borderBottomColor: DriverColors.border,
-  },
-  backButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: { ...DriverTypography.section },
-  placeholder: { width: 36, height: 36 },
-  content: { padding: DriverSpacing.lg, gap: DriverSpacing.sm },
-  emptyCard: {
-    borderRadius: DriverRadius.md,
-    borderWidth: 1,
-    borderColor: DriverColors.border,
-    backgroundColor: '#F9FAFB',
-    padding: DriverSpacing.lg,
-    alignItems: 'center',
-  },
-  emptyTitle: { fontSize: 14, fontWeight: '700', color: DriverColors.text },
-  emptyText: { marginTop: 6, fontSize: 12, color: DriverColors.muted, textAlign: 'center' },
-  card: {
-    borderRadius: DriverRadius.md,
-    borderWidth: 1,
-    borderColor: DriverColors.border,
-    backgroundColor: '#FFFFFF',
-    padding: DriverSpacing.md,
-  },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  customer: { fontSize: 14, fontWeight: '700', color: DriverColors.text },
-  net: { fontSize: 13, fontWeight: '800', color: DriverColors.success },
-  meta: { marginTop: 4, fontSize: 12, color: DriverColors.muted },
-  breakdown: { marginTop: 8, flexDirection: 'row', justifyContent: 'space-between' },
-  breakdownText: { fontSize: 11, color: DriverColors.text, fontWeight: '600' },
-});
-

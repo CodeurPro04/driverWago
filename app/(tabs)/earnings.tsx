@@ -3,8 +3,10 @@ import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } fr
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing, DriverTypography } from '@/constants/driverTheme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
 import { useScreenRefresh } from '@/hooks/useScreenRefresh';
+import { getDriverPalette } from '@/lib/driverAppearance';
 
 const PERIODS = ['Jour', 'Semaine', 'Mois'] as const;
 const COMMISSION_RATE = 0.2;
@@ -30,6 +32,7 @@ const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(),
 export default function EarningsScreen() {
   const router = useRouter();
   const { state, dispatch } = useDriverStore();
+  const palette = getDriverPalette(useColorScheme());
   useScreenRefresh({ jobs: true, inbox: true, intervalMs: 30000 });
   const [period, setPeriod] = useState<(typeof PERIODS)[number]>('Jour');
   const unreadCount = useMemo(() => state.notifications.filter((item) => !item.read).length, [state.notifications]);
@@ -122,24 +125,24 @@ export default function EarningsScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: palette.background }]}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <View style={styles.statusPill}>
+          <View style={[styles.statusPill, { backgroundColor: palette.surfaceMuted }]}>
             <TouchableOpacity
               style={[styles.statusOption, !state.availability && styles.statusOptionActive]}
               onPress={() => state.availability && dispatch({ type: 'TOGGLE_AVAILABILITY' })}
             >
-              <Text style={[styles.statusText, !state.availability && styles.statusTextActive]}>Hors ligne</Text>
+              <Text style={[styles.statusText, { color: palette.textMuted }, !state.availability && styles.statusTextActive]}>Hors ligne</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.statusOption, state.availability && styles.statusOptionActive]}
               onPress={() => !state.availability && dispatch({ type: 'TOGGLE_AVAILABILITY' })}
             >
-              <Text style={[styles.statusText, state.availability && styles.statusTextActive]}>En ligne</Text>
+              <Text style={[styles.statusText, { color: palette.textMuted }, state.availability && styles.statusTextActive]}>En ligne</Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.notificationButton} onPress={() => router.push('/notifications')}>
+          <TouchableOpacity style={[styles.notificationButton, { backgroundColor: palette.iconButton }]} onPress={() => router.push('/notifications')}>
             <Ionicons name="notifications-outline" size={20} color={DriverColors.primary} />
             {unreadCount > 0 ? (
               <View style={styles.badge}>
@@ -149,64 +152,64 @@ export default function EarningsScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.segmented}>
+        <View style={[styles.segmented, { backgroundColor: palette.surfaceMuted }]}>
           {PERIODS.map((item) => {
             const active = item === period;
             return (
               <TouchableOpacity key={item} style={[styles.segment, active && styles.segmentActive]} onPress={() => setPeriod(item)}>
-                <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{item}</Text>
+                <Text style={[styles.segmentText, { color: palette.textMuted }, active && styles.segmentTextActive]}>{item}</Text>
               </TouchableOpacity>
             );
           })}
         </View>
 
-        <View style={styles.overviewCard}>
+        <View style={[styles.overviewCard, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
           <View style={styles.overviewItem}>
-            <Text style={styles.overviewValue}>{completedCount}</Text>
-            <Text style={styles.overviewLabel}>Commandes</Text>
+            <Text style={[styles.overviewValue, { color: palette.text }]}>{completedCount}</Text>
+            <Text style={[styles.overviewLabel, { color: palette.textMuted }]}>Commandes</Text>
           </View>
-          <View style={styles.overviewDivider} />
+          <View style={[styles.overviewDivider, { backgroundColor: palette.border }]} />
           <View style={styles.overviewItem}>
-            <Text style={styles.overviewValue}>{netEarnings.toLocaleString()} F CFA</Text>
-            <Text style={styles.overviewLabel}>Gain net</Text>
+            <Text style={[styles.overviewValue, { color: palette.text }]}>{netEarnings.toLocaleString()} F CFA</Text>
+            <Text style={[styles.overviewLabel, { color: palette.textMuted }]}>Gain net</Text>
           </View>
-          <View style={styles.overviewDivider} />
+          <View style={[styles.overviewDivider, { backgroundColor: palette.border }]} />
           <View style={styles.overviewItem}>
-            <Text style={styles.overviewValue}>{state.rating.toFixed(1)}</Text>
-            <Text style={styles.overviewLabel}>Evaluation</Text>
+            <Text style={[styles.overviewValue, { color: palette.text }]}>{state.rating.toFixed(1)}</Text>
+            <Text style={[styles.overviewLabel, { color: palette.textMuted }]}>Evaluation</Text>
           </View>
         </View>
 
-        <View style={styles.financeCard}>
-          <Text style={styles.financeTitle}>Detail des gains ({period.toLowerCase()})</Text>
+        <View style={[styles.financeCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+          <Text style={[styles.financeTitle, { color: palette.text }]}>Detail des gains ({period.toLowerCase()})</Text>
           <View style={styles.financeRow}>
-            <Text style={styles.financeLabel}>Montant total commandes</Text>
+            <Text style={[styles.financeLabel, { color: palette.textMuted }]}>Montant total commandes</Text>
             <Text style={styles.financeValue}>{grossEarnings.toLocaleString()} F CFA</Text>
           </View>
           <View style={styles.financeRow}>
-            <Text style={styles.financeLabel}>Commission ({Math.round(COMMISSION_RATE * 100)}%)</Text>
+            <Text style={[styles.financeLabel, { color: palette.textMuted }]}>Commission ({Math.round(COMMISSION_RATE * 100)}%)</Text>
             <Text style={styles.financeNegative}>- {commissionTotal.toLocaleString()} F CFA</Text>
           </View>
-          <View style={styles.financeDivider} />
+          <View style={[styles.financeDivider, { backgroundColor: palette.border }]} />
           <View style={styles.financeRow}>
-            <Text style={styles.financeNetLabel}>Gain net</Text>
+            <Text style={[styles.financeNetLabel, { color: palette.text }]}>Gain net</Text>
             <Text style={styles.financeNetValue}>{netEarnings.toLocaleString()} F CFA</Text>
           </View>
         </View>
 
-        <TouchableOpacity style={styles.historyButton} onPress={() => router.push('/earnings-history')}>
+        <TouchableOpacity style={[styles.historyButton, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]} onPress={() => router.push('/earnings-history')}>
           <Ionicons name="time" size={16} color={DriverColors.primary} />
-          <Text style={styles.historyButtonText}>Voir l historique des commandes</Text>
+          <Text style={[styles.historyButtonText, { color: palette.text }]}>Voir l historique des commandes</Text>
         </TouchableOpacity>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Votre progression</Text>
-          <Text style={styles.progressMeta}>
+          <Text style={[styles.sectionTitle, { color: palette.text }]}>Votre progression</Text>
+          <Text style={[styles.progressMeta, { color: palette.textMuted }]}>
             Pic: {bestPoint.label} ({bestPoint.value.toLocaleString()} F CFA)
           </Text>
         </View>
 
-        <View style={styles.chartCard}>
+        <View style={[styles.chartCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
           <View style={styles.chartBars}>
             {chartData.map((point) => {
               const heightPct = Math.max(6, Math.round((point.value / maxChartValue) * 100));
@@ -215,8 +218,8 @@ export default function EarningsScreen() {
                   <View style={styles.barTrack}>
                     <View style={[styles.barFill, { height: `${heightPct}%` }]} />
                   </View>
-                  <Text style={styles.barLabel}>{point.label}</Text>
-                  <Text style={styles.barValue}>{Math.round(point.value / 1000)}k</Text>
+                  <Text style={[styles.barLabel, { color: palette.textMuted }]}>{point.label}</Text>
+                  <Text style={[styles.barValue, { color: palette.text }]}>{Math.round(point.value / 1000)}k</Text>
                 </View>
               );
             })}

@@ -13,6 +13,8 @@ import {
 import { useRouter } from 'expo-router';
 import { DriverColors, DriverSpacing } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getDriverPalette } from '@/lib/driverAppearance';
 
 type Slide = {
   id: string;
@@ -53,6 +55,76 @@ export default function OnboardingScreen() {
   const { dispatch } = useDriverStore();
   const listRef = useRef<FlatList<Slide>>(null);
   const [index, setIndex] = useState(0);
+  const palette = getDriverPalette(useColorScheme());
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: palette.background,
+    },
+    slide: {
+      width: SCREEN_WIDTH,
+      padding: DriverSpacing.lg,
+      alignItems: 'center',
+    },
+    logo: {
+      fontSize: 20,
+      fontWeight: '700',
+      color: DriverColors.primary,
+      marginBottom: DriverSpacing.lg,
+    },
+    hero: {
+      width: '100%',
+      height: 300,
+    },
+    pagination: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: DriverSpacing.md,
+    },
+    dot: {
+      width: 28,
+      height: 6,
+      borderRadius: 999,
+      backgroundColor: palette.border,
+    },
+    dotActive: {
+      backgroundColor: DriverColors.primary,
+    },
+    title: {
+      marginTop: DriverSpacing.lg,
+      textAlign: 'center',
+      fontSize: 20,
+      fontWeight: '700',
+      color: palette.text,
+    },
+    actions: {
+      width: '100%',
+      marginTop: DriverSpacing.xl,
+      gap: 12,
+    },
+    primaryButton: {
+      backgroundColor: DriverColors.primary,
+      paddingVertical: 14,
+      borderRadius: 999,
+      alignItems: 'center',
+    },
+    primaryText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    secondaryButton: {
+      backgroundColor: palette.surfaceMuted,
+      paddingVertical: 12,
+      borderRadius: 999,
+      alignItems: 'center',
+    },
+    secondaryText: {
+      color: palette.textMuted,
+      fontSize: 13,
+      fontWeight: '600',
+    },
+  });
 
   const handleAdvance = () => {
     if (index < slides.length - 1) {
@@ -118,73 +190,3 @@ export default function OnboardingScreen() {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: DriverColors.background,
-  },
-  slide: {
-    width: SCREEN_WIDTH,
-    padding: DriverSpacing.lg,
-    alignItems: 'center',
-  },
-  logo: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: DriverColors.primary,
-    marginBottom: DriverSpacing.lg,
-  },
-  hero: {
-    width: '100%',
-    height: 300,
-  },
-  pagination: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: DriverSpacing.md,
-  },
-  dot: {
-    width: 28,
-    height: 6,
-    borderRadius: 999,
-    backgroundColor: '#E5E7EB',
-  },
-  dotActive: {
-    backgroundColor: DriverColors.primary,
-  },
-  title: {
-    marginTop: DriverSpacing.lg,
-    textAlign: 'center',
-    fontSize: 20,
-    fontWeight: '700',
-    color: DriverColors.text,
-  },
-  actions: {
-    width: '100%',
-    marginTop: DriverSpacing.xl,
-    gap: 12,
-  },
-  primaryButton: {
-    backgroundColor: DriverColors.primary,
-    paddingVertical: 14,
-    borderRadius: 999,
-    alignItems: 'center',
-  },
-  primaryText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  secondaryButton: {
-    backgroundColor: '#F3F4F6',
-    paddingVertical: 12,
-    borderRadius: 999,
-    alignItems: 'center',
-  },
-  secondaryText: {
-    color: DriverColors.muted,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-});
