@@ -73,6 +73,20 @@ const normalizeUser = (user: any) => {
   };
 };
 
+const extractUserPayload = (payload: any) => {
+  if (!payload || typeof payload !== 'object') return null;
+  return payload.user || payload.driver || payload.data?.user || payload.data?.driver || null;
+};
+
+const normalizeProfileResponse = <T extends Record<string, any>>(response: T) => {
+  const user = extractUserPayload(response);
+  if (!user) return response;
+  return {
+    ...response,
+    user: normalizeUser(user),
+  };
+};
+
 const normalizeJob = (job: any) => {
   if (!job || typeof job !== 'object') return job;
   return {
@@ -97,7 +111,15 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
 
-  const data = await response.json().catch(() => ({}));
+  const rawText = await response.text().catch(() => '');
+  let data: any = {};
+  if (rawText) {
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      data = { raw: rawText };
+    }
+  }
   if (!response.ok) {
     throw new ApiError(data?.message || `Erreur API (${response.status})`, response.status, data);
   }
@@ -271,7 +293,7 @@ export async function transitionJob(
 
 export async function getUserProfile(userId: number) {
   const response = await apiRequest<{ user: any; stats: Record<string, number> }>(`/users/${userId}/profile`);
-  return { ...response, user: normalizeUser(response.user) };
+  return normalizeProfileResponse(response);
 }
 
 export async function updateUserProfile(
@@ -292,7 +314,7 @@ export async function updateUserProfile(
     method: 'PATCH',
     body: JSON.stringify(payload),
   });
-  return { ...response, user: normalizeUser(response.user) };
+  return normalizeProfileResponse(response);
 }
 
 export async function uploadUserAvatar(userId: number, uri: string) {
@@ -307,7 +329,7 @@ export async function uploadUserAvatar(userId: number, uri: string) {
     method: 'POST',
     body: form,
   });
-  return { ...response, user: normalizeUser(response.user) };
+  return normalizeProfileResponse(response);
 }
 
 export async function uploadJobMedia(
@@ -349,7 +371,7 @@ export async function uploadDriverDocument(driverId: number, type: string, uri: 
     method: 'POST',
     body: form,
   });
-  return { ...response, user: normalizeUser(response.user) };
+  return normalizeProfileResponse(response);
 }
 
 export async function submitDriverDocuments(driverId: number) {
@@ -357,7 +379,7 @@ export async function submitDriverDocuments(driverId: number) {
     method: 'POST',
     body: JSON.stringify({}),
   });
-  return { ...response, user: normalizeUser(response.user) };
+  return normalizeProfileResponse(response);
 }
 
 export async function getDriverNotifications(driverId: number) {

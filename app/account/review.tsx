@@ -10,14 +10,16 @@ export default function UnderReviewScreen() {
   const { state, dispatch } = useDriverStore();
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const isRejected = state.profileStatus === 'rejected' || state.documentsStatus === 'rejected';
+  const isApproved = state.profileStatus === 'approved' || (state.accountStep >= 6 && state.documentsStatus === 'submitted');
 
   useEffect(() => {
-    if (state.profileStatus !== 'approved') return;
+    if (!isApproved) return;
     const timer = setTimeout(() => {
       router.replace('/(tabs)');
     }, 0);
     return () => clearTimeout(timer);
-  }, [router, state.profileStatus]);
+  }, [isApproved, router]);
 
   useEffect(() => {
     dispatch({ type: 'SET_ACCOUNT_STEP', value: 7 });
@@ -42,7 +44,7 @@ export default function UnderReviewScreen() {
         if (status === 'approved') {
           dispatch({ type: 'SET_ACCOUNT_STEP', value: 8 });
           router.replace('/(tabs)');
-        } else if (status === 'rejected' || accountStep < 6) {
+        } else if (status === 'rejected' || docsStatus === 'rejected' || accountStep < 6) {
           router.replace('/account/documents');
         }
       } catch {
@@ -79,7 +81,7 @@ export default function UnderReviewScreen() {
       if (status === 'approved') {
         dispatch({ type: 'SET_ACCOUNT_STEP', value: 8 });
         router.replace('/(tabs)');
-      } else if (status === 'rejected' || accountStep < 6) {
+      } else if (status === 'rejected' || docsStatus === 'rejected' || accountStep < 6) {
         router.replace('/account/documents');
       }
     } catch {
@@ -96,7 +98,7 @@ export default function UnderReviewScreen() {
         <Text style={styles.body}>
           Vos documents ont ete transmis. Votre compte reste en attente jusqu a validation par l administrateur.
         </Text>
-        {state.profileStatus !== 'rejected' ? (
+        {!isRejected ? (
           <Text style={styles.redirectHint}>Redirection automatique vers l application...</Text>
         ) : null}
 
@@ -104,10 +106,10 @@ export default function UnderReviewScreen() {
 
         <View style={styles.statusBox}>
           <Text style={styles.statusTitle}>
-            Statut: {state.profileStatus === 'approved' ? 'Valide' : state.profileStatus === 'rejected' ? 'Refuse' : 'En attente'}
+            Statut: {isApproved ? 'Valide' : isRejected ? 'Refuse' : 'En attente'}
           </Text>
           <Text style={styles.statusBody}>
-            {state.profileStatus === 'rejected'
+            {isRejected
               ? 'Votre dossier a ete refuse. Mettez a jour vos documents pour une nouvelle soumission.'
               : 'Vous ne pouvez pas voir les missions tant que votre compte n est pas valide.'}
           </Text>
@@ -121,7 +123,7 @@ export default function UnderReviewScreen() {
           )}
         </TouchableOpacity>
 
-        {state.profileStatus === 'rejected' ? (
+        {isRejected ? (
           <TouchableOpacity style={styles.secondaryButton} onPress={() => router.replace('/account/documents')}>
             <Text style={styles.secondaryText}>Mettre a jour mes documents</Text>
           </TouchableOpacity>

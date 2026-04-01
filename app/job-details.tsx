@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
   Platform,
@@ -13,10 +12,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { DriverColors, DriverRadius, DriverSpacing } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
 import DriverSafeMap, { DriverMapRegion } from '@/components/DriverSafeMap';
 import { useScreenRefresh } from '@/hooks/useScreenRefresh';
+import { useDriverNavigation } from '@/hooks/useDriverNavigation';
 
 const DEFAULT_REGION: DriverMapRegion = {
   latitude: 5.3364,
@@ -41,7 +42,7 @@ export default function JobDetailsScreen() {
   const params = useLocalSearchParams();
   const { state, dispatch } = useDriverStore();
   useScreenRefresh({ jobs: true, intervalMs: 10000 });
-  const [mapRegion, setMapRegion] = useState<DriverMapRegion>(DEFAULT_REGION);
+  const [mapRegionOverride, setMapRegionOverride] = useState<DriverMapRegion | null>(null);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
 
   const job = useMemo(() => {
@@ -68,7 +69,7 @@ export default function JobDetailsScreen() {
     () => (job ? Math.max(0, job.price - commissionAmount) : 0),
     [job, commissionAmount]
   );
-  const initialRegion = useMemo<DriverMapRegion>(() => {
+  const fallbackRegion = useMemo<DriverMapRegion>(() => {
     if (!job) return DEFAULT_REGION;
     return {
       latitude: job.latitude || DEFAULT_REGION.latitude,
@@ -78,13 +79,19 @@ export default function JobDetailsScreen() {
     };
   }, [job]);
 
+  const { driverLocation, hasLocationPermission, mapRegion, routeCoordinates } = useDriverNavigation({
+    destination: job ? { latitude: job.latitude, longitude: job.longitude } : null,
+    fallbackRegion,
+    enabled: !!job,
+  });
+
   useEffect(() => {
-    setMapRegion(initialRegion);
-  }, [initialRegion]);
+    setMapRegionOverride(null);
+  }, [job?.id]);
 
   const focusDestination = () => {
     if (!job) return;
-    setMapRegion({
+    setMapRegionOverride({
       latitude: job.latitude,
       longitude: job.longitude,
       latitudeDelta: 0.012,
@@ -127,13 +134,16 @@ export default function JobDetailsScreen() {
       <View style={styles.mapSection}>
         <DriverSafeMap
           style={styles.map}
-          region={mapRegion}
+          region={mapRegionOverride || mapRegion}
           marker={{
             latitude: job.latitude,
             longitude: job.longitude,
             title: job.customerName,
             description: job.address,
           }}
+          driverLocation={driverLocation}
+          routeCoordinates={routeCoordinates}
+          showsUserLocation={hasLocationPermission}
           markerIcon="car"
         />
 

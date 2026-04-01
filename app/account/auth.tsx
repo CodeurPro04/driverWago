@@ -49,11 +49,13 @@ const secureRandomState = () => {
 const getPostAuthRoute = (user: {
   account_step?: number;
   profile_status?: string;
+  documents_status?: string;
 }): '/(tabs)' | '/account/profile' | '/account/location' | '/account/legal' | '/account/documents' | '/account/review' => {
   const step = Number(user.account_step || 0);
   const profileStatus = user.profile_status || 'pending';
+  const documentsStatus = user.documents_status || 'pending';
 
-  if (profileStatus === 'approved' && step >= 8) return '/(tabs)';
+  if ((profileStatus === 'approved' && step >= 8) || (documentsStatus === 'submitted' && step >= 6)) return '/(tabs)';
   if (step <= 2) return '/account/profile';
   if (step === 3) return '/account/location';
   if (step === 4) return '/account/legal';
@@ -107,8 +109,8 @@ export default function DriverAuthScreen() {
     });
     dispatch({ type: 'SET_ACCOUNT_STEP', value: user.account_step ?? 0 });
     dispatch({ type: 'SET_ONBOARDING_DONE', value: true });
-    await refreshJobsNow(user.id);
     router.replace(getPostAuthRoute(user));
+    refreshJobsNow(user.id).catch(() => undefined);
   };
 
   const handleEmailSubmit = async () => {
@@ -156,7 +158,8 @@ export default function DriverAuthScreen() {
         Alert.alert('Erreur', error.message || 'Impossible de finaliser la connexion.');
         return;
       }
-      Alert.alert('Erreur reseau', 'Connexion au backend impossible.');
+      const message = error instanceof Error && error.message ? error.message : 'Connexion au backend impossible.';
+      Alert.alert('Erreur reseau', message);
     } finally {
       setLoading(false);
     }

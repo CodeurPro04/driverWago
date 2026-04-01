@@ -1,9 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
   Platform,
@@ -14,10 +13,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { DriverColors, DriverRadius, DriverSpacing } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
 import DriverSafeMap, { DriverMapRegion } from '@/components/DriverSafeMap';
 import { useScreenRefresh } from '@/hooks/useScreenRefresh';
+import { useDriverNavigation } from '@/hooks/useDriverNavigation';
 
 const DEFAULT_REGION: DriverMapRegion = {
   latitude: 5.3364,
@@ -55,7 +56,7 @@ export default function ActiveScreen() {
   const { state, dispatch } = useDriverStore();
   useScreenRefresh({ jobs: true, intervalMs: 8000 });
   const [confirmArrive, setConfirmArrive] = useState(false);
-  const [mapRegion, setMapRegion] = useState<DriverMapRegion>(DEFAULT_REGION);
+  const [mapRegionOverride, setMapRegionOverride] = useState<DriverMapRegion | null>(null);
 
   const activeJob = useMemo(() => {
     if (!state.activeJobId) return null;
@@ -72,7 +73,7 @@ export default function ActiveScreen() {
     [activeJob, commissionAmount]
   );
 
-  const initialRegion = useMemo<DriverMapRegion>(() => {
+  const fallbackRegion = useMemo<DriverMapRegion>(() => {
     if (!activeJob) return DEFAULT_REGION;
     return {
       latitude: activeJob.latitude || DEFAULT_REGION.latitude,
@@ -82,9 +83,15 @@ export default function ActiveScreen() {
     };
   }, [activeJob]);
 
+  const { driverLocation, hasLocationPermission, mapRegion, routeCoordinates } = useDriverNavigation({
+    destination: activeJob ? { latitude: activeJob.latitude, longitude: activeJob.longitude } : null,
+    fallbackRegion,
+    enabled: !!activeJob,
+  });
+
   useEffect(() => {
-    setMapRegion(initialRegion);
-  }, [initialRegion]);
+    setMapRegionOverride(null);
+  }, [activeJob?.id]);
 
   useEffect(() => {
     if (!state.lastAutoCancelledJobId) return;
@@ -112,7 +119,7 @@ export default function ActiveScreen() {
 
   const focusDestination = () => {
     if (!activeJob) return;
-    setMapRegion({
+    setMapRegionOverride({
       latitude: activeJob.latitude,
       longitude: activeJob.longitude,
       latitudeDelta: 0.012,
@@ -173,13 +180,16 @@ export default function ActiveScreen() {
       <View style={styles.mapSection}>
         <DriverSafeMap
           style={styles.map}
-          region={mapRegion}
+          region={mapRegionOverride || mapRegion}
           marker={{
             latitude: activeJob.latitude,
             longitude: activeJob.longitude,
             title: activeJob.customerName,
             description: activeJob.address,
           }}
+          driverLocation={driverLocation}
+          routeCoordinates={routeCoordinates}
+          showsUserLocation={hasLocationPermission}
           markerIcon="sparkles"
         />
 

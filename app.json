@@ -1,17 +1,27 @@
 {
   "expo": {
-    "name": "ZIWAGO-Driver",
+    "name": "ZIWAGO Driver Pro",
     "slug": "ZIWAGO-Driver",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "ziwagodriver",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "buildNumber": "2",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Utilisez Face ID pour securiser votre espace laveur.",
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
+      },
+      "bundleIdentifier": "com.anonymous.ZIWAGODriver",
+      "appleTeamId": "49QQU6LYWP"
     },
     "android": {
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -20,6 +30,15 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "POST_NOTIFICATIONS",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ],
       "package": "com.anonymous.ZIWAGODriver"
     },
     "web": {
@@ -28,7 +47,14 @@
     },
     "plugins": [
       "expo-router",
-      "expo-notifications",
+      "expo-local-authentication",
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "default",
+          "enableBackgroundRemoteNotifications": true
+        }
+      ],
       "react-native-maps",
       [
         "expo-splash-screen",

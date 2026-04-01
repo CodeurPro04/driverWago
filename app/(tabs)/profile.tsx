@@ -10,6 +10,8 @@ import {
   Alert,
   ActivityIndicator,
   Image,
+  Platform,
+  Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -17,10 +19,11 @@ import * as ImagePicker from 'expo-image-picker';
 import { DriverColors, DriverRadius, DriverSpacing, DriverTypography } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
 import { ApiError, getUserProfile, updateUserProfile, uploadUserAvatar } from '@/lib/api';
+import { authenticateWithBiometrics, canUseBiometrics, canUseFaceId, getBiometricLabel } from '@/lib/biometrics';
 
 type ProfileTab = 'overview' | 'verification' | 'activity' | 'settings' | 'security';
 
-const TABS: Array<{ id: ProfileTab; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+const TABS: { id: ProfileTab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { id: 'overview', label: 'Apercu', icon: 'person-circle-outline' },
   { id: 'verification', label: 'Verification', icon: 'shield-checkmark-outline' },
   { id: 'activity', label: 'Activite', icon: 'briefcase-outline' },
@@ -242,7 +245,7 @@ export default function ProfileScreen() {
       <View style={styles.profileCard}>
         <TouchableOpacity style={styles.avatar} onPress={onPickAvatar}>
           {avatarUrl ? (
-            <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+            <Image source={{ uri: avatarUrl }} style={styles.avatarImage} onError={() => setAvatarUrl('')} />
           ) : (
             <Text style={styles.avatarText}>{(form.firstName || state.driverName || 'L').charAt(0).toUpperCase()}</Text>
           )}
@@ -435,6 +438,50 @@ export default function ProfileScreen() {
   const renderSecurity = () => (
     <View style={styles.card}>
       <Text style={styles.sectionTitle}>Securite du compte</Text>
+      <View style={styles.securityToggleRow}>
+        <View style={styles.securityToggleCopy}>
+          <Text style={styles.securityToggleTitle}>Connexion biométrique</Text>
+          <Text style={styles.securityToggleHint}>
+            {Platform.OS === 'ios'
+              ? 'Utilisez Face ID pour proteger l acces a l application.'
+              : 'Utilisez la biometrie de l appareil pour proteger l acces a l application.'}
+          </Text>
+        </View>
+        <Switch
+          value={state.biometricEnabled}
+          trackColor={{ false: '#D1D5DB', true: '#BFDBFE' }}
+          thumbColor={state.biometricEnabled ? DriverColors.primary : '#FFFFFF'}
+          onValueChange={async (nextValue) => {
+            if (!nextValue) {
+              dispatch({ type: 'SET_BIOMETRIC_ENABLED', value: false });
+              return;
+            }
+
+            try {
+              if (!(await canUseBiometrics())) {
+                Alert.alert('Biometrie indisponible', 'Aucune biometrie n est configuree sur cet appareil.');
+                return;
+              }
+
+              if (Platform.OS === 'ios' && !(await canUseFaceId())) {
+                Alert.alert('Face ID indisponible', 'Face ID n est pas configure sur cet iPhone.');
+                return;
+              }
+
+              const label = await getBiometricLabel();
+              const success = await authenticateWithBiometrics(`Activer ${label}`);
+              if (!success) {
+                Alert.alert('Activation annulee', `${label} n a pas ete valide.`);
+                return;
+              }
+
+              dispatch({ type: 'SET_BIOMETRIC_ENABLED', value: true });
+            } catch {
+              Alert.alert('Erreur', 'Impossible d activer la securite biométrique.');
+            }
+          }}
+        />
+      </View>
       <View style={styles.securityRow}>
         <Text style={styles.securityLabel}>Identifiant session</Text>
         <Text style={styles.securityValue}>{state.driverId ? `DRV-${state.driverId}` : '-'}</Text>
@@ -889,6 +936,30 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: DriverColors.border,
+  },
+  securityToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingBottom: 12,
+    marginBottom: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: DriverColors.border,
+  },
+  securityToggleCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  securityToggleTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: DriverColors.text,
+  },
+  securityToggleHint: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: DriverColors.muted,
   },
   securityLabel: {
     fontSize: 12,

@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import * as Notifications from 'expo-notifications';
 import {
   acceptJob,
   clearDriverNotifications,
@@ -16,7 +17,7 @@ import {
   transitionJob,
   updateDriverAvailability,
 } from '@/lib/api';
-import { getExpoPushTokenSafe } from '@/lib/push';
+import { configurePushChannels, getExpoPushTokenSafe } from '@/lib/push';
 import { subscribeDriverRealtime } from '@/lib/realtime';
 
 export type JobStatus = 'pending' | 'accepted' | 'enRoute' | 'arrived' | 'washing' | 'completed' | 'cancelled';
@@ -79,6 +80,7 @@ interface DriverState {
   driverId: number | null;
   driverPhone: string;
   driverName: string;
+  biometricEnabled: boolean;
   rating: number;
   reviewsCount: number;
   recentReviews: DriverReview[];
@@ -116,6 +118,7 @@ type DriverAction =
   | { type: 'SET_AFTER_PHOTO'; index: number; uri: string }
   | { type: 'SET_DRIVER_PHONE'; value: string }
   | { type: 'SET_DRIVER_NAME'; value: string }
+  | { type: 'SET_BIOMETRIC_ENABLED'; value: boolean }
   | {
       type: 'SET_DRIVER_SESSION';
       value: {
@@ -144,7 +147,7 @@ type DriverAction =
   | { type: 'CLEAR_DRIVER_SESSION' }
   | { type: 'HYDRATE'; value: Partial<DriverState> };
 
-const STORAGE_KEY = 'ZIWAGO_DRIVER_STATE_V6';
+const STORAGE_KEY = 'ZIWAGO_DRIVER_STATE_V7';
 
 const toDateOnlyLabel = (raw?: string) => {
   const now = new Date();
@@ -180,6 +183,7 @@ const initialState: DriverState = {
   driverId: null,
   driverPhone: '',
   driverName: 'Laveur',
+  biometricEnabled: false,
   rating: 0,
   reviewsCount: 0,
   recentReviews: [],
@@ -271,6 +275,8 @@ const driverReducer = (state: DriverState, action: DriverAction): DriverState =>
       return { ...state, driverPhone: action.value };
     case 'SET_DRIVER_NAME':
       return { ...state, driverName: action.value };
+    case 'SET_BIOMETRIC_ENABLED':
+      return { ...state, biometricEnabled: action.value };
     case 'SET_DRIVER_SESSION':
       return {
         ...state,
@@ -477,6 +483,10 @@ export const DriverProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   useEffect(() => {
+    configurePushChannels().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     const load = async () => {
       try {
         const stored = await AsyncStorage.getItem(STORAGE_KEY);
@@ -579,6 +589,27 @@ export const DriverProvider = ({ children }: { children: React.ReactNode }) => {
     };
     syncDevice().catch(() => undefined);
   }, [hydrated, state.driverId, state.lastSeenAppVersion, refreshRemoteInbox]);
+
+  useEffect(() => {
+    if (!hydrated || !state.driverId) return;
+
+    const refreshInboxFromPush = () => {
+      refreshRemoteInbox(state.driverId as number).catch(() => undefined);
+    };
+
+    const receivedSubscription = Notifications.addNotificationReceivedListener(() => {
+      refreshInboxFromPush();
+    });
+
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(() => {
+      refreshInboxFromPush();
+    });
+
+    return () => {
+      receivedSubscription.remove();
+      responseSubscription.remove();
+    };
+  }, [hydrated, state.driverId, refreshRemoteInbox]);
 
   const networkDispatch = useCallback(
     async (action: DriverAction) => {

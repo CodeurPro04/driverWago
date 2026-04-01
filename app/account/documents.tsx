@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { DriverColors, DriverRadius, DriverSpacing } from '@/constants/driverTheme';
 import { useDriverStore } from '@/hooks/useDriverStore';
-import { ApiError, submitDriverDocuments, uploadDriverDocument } from '@/lib/api';
+import { ApiError, getUserProfile, submitDriverDocuments, uploadDriverDocument } from '@/lib/api';
 
 const docItems = [
   { id: 'id', title: 'Carte d\'identite nationale ou passeport' },
@@ -18,19 +18,29 @@ const docItems = [
 export default function DriverDocumentsScreen() {
   const router = useRouter();
   const { state, dispatch } = useDriverStore();
-  const documents = state.documents || {};
+  const documents = state.documents;
   const [uploadingDocId, setUploadingDocId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (state.profileStatus === 'approved') {
+    if (state.profileStatus === 'approved' || (state.accountStep >= 6 && state.documentsStatus === 'submitted')) {
       router.replace('/(tabs)');
     }
-  }, [router, state.profileStatus]);
+  }, [router, state.accountStep, state.documentsStatus, state.profileStatus]);
 
   const allUploaded = useMemo(
     () => docItems.every((doc) => Boolean(documents[doc.id])),
     [documents]
   );
+
+  const syncProfileState = async () => {
+    if (!state.driverId) return null;
+    const profile = await getUserProfile(state.driverId);
+    dispatch({ type: 'SET_ACCOUNT_STEP', value: Number(profile.user.account_step || state.accountStep || 5) });
+    dispatch({ type: 'SET_PROFILE_STATUS', value: (profile.user.profile_status || state.profileStatus || 'pending') as any });
+    dispatch({ type: 'SET_DOCUMENTS', value: (profile.user.documents as Record<string, string | null>) || {} });
+    dispatch({ type: 'SET_DOCUMENTS_STATUS', value: (profile.user.documents_status || state.documentsStatus || 'pending') as any });
+    return profile;
+  };
 
   const persistDocument = async (id: string, uri: string) => {
     if (uploadingDocId) return;
@@ -48,6 +58,15 @@ export default function DriverDocumentsScreen() {
       dispatch({ type: 'SET_DOCUMENTS', value: (response.user.documents as Record<string, string | null>) || {} });
       dispatch({ type: 'SET_DOCUMENTS_STATUS', value: (response.user.documents_status || 'pending') as any });
     } catch (error) {
+      try {
+        const profile = await syncProfileState();
+        if (profile?.user?.documents?.[id]) {
+          return;
+        }
+      } catch {
+        // Keep the original upload error below when the sync also fails.
+      }
+
       dispatch({ type: 'SET_DOCUMENT', id, uri: previousUri });
       const message = error instanceof ApiError ? error.message : 'Impossible de televerser ce document pour le moment.';
       Alert.alert('Erreur', message);
@@ -156,11 +175,24 @@ export default function DriverDocumentsScreen() {
             submitDriverDocuments(state.driverId)
               .then((response) => {
                 dispatch({ type: 'SET_ACCOUNT_STEP', value: response.user.account_step || 6 });
+                dispatch({ type: 'SET_PROFILE_STATUS', value: (response.user.profile_status || state.profileStatus || 'pending') as any });
                 dispatch({ type: 'SET_DOCUMENTS', value: (response.user.documents as Record<string, string | null>) || {} });
                 dispatch({ type: 'SET_DOCUMENTS_STATUS', value: (response.user.documents_status || 'submitted') as any });
-                router.push('/account/review');
+                router.replace('/(tabs)');
               })
-              .catch((error) => {
+              .catch(async (error) => {
+                try {
+                  const profile = await syncProfileState();
+                  const documentsStatus = profile?.user?.documents_status || state.documentsStatus;
+                  const accountStep = Number(profile?.user?.account_step || state.accountStep || 0);
+                  if (documentsStatus === 'submitted' || accountStep >= 6) {
+                    router.replace('/(tabs)');
+                    return;
+                  }
+                } catch {
+                  // Keep the original submit error below when the sync also fails.
+                }
+
                 const message = error instanceof ApiError ? error.message : 'Soumission impossible. Verifiez les documents puis reessayez.';
                 Alert.alert('Soumission echouee', message);
               });
@@ -252,5 +284,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-
-

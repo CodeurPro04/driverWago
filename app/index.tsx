@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { Redirect, useRootNavigationState } from 'expo-router';
+import { ActivityIndicator, Alert, Platform, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useDriverStore } from '@/hooks/useDriverStore';
+import { DriverColors, DriverRadius, DriverSpacing } from '@/constants/driverTheme';
+import { authenticateWithBiometrics, canUseFaceId, getBiometricLabel } from '@/lib/biometrics';
 
 const stepRoutes: Record<number, string> = {
   0: '/account/profile',
@@ -17,9 +20,52 @@ const stepRoutes: Record<number, string> = {
 export default function Index() {
   const rootNavigationState = useRootNavigationState();
   const { state, hydrated } = useDriverStore();
+  const [unlocking, setUnlocking] = useState(false);
+  const [biometricUnlocked, setBiometricUnlocked] = useState(false);
+  const canEnterMainApp =
+    state.profileStatus === 'approved' || (state.accountStep >= 6 && state.documentsStatus === 'submitted');
+  const isLoggedIn = useMemo(() => Boolean(state.driverId), [state.driverId]);
 
   if (!rootNavigationState?.key || !hydrated) {
     return null;
+  }
+
+  if (isLoggedIn && state.biometricEnabled && !biometricUnlocked) {
+    const unlock = async () => {
+      setUnlocking(true);
+      try {
+        const label = await getBiometricLabel();
+        if (Platform.OS === 'ios') {
+          const faceIdAvailable = await canUseFaceId();
+          if (!faceIdAvailable) {
+            Alert.alert('Face ID indisponible', 'Face ID n est pas configure sur cet iPhone.');
+            return;
+          }
+        }
+        const success = await authenticateWithBiometrics(`Se connecter avec ${label}`);
+        if (!success) {
+          Alert.alert('Authentification annulee', `Utilisez ${label} pour acceder a votre compte.`);
+          return;
+        }
+        setBiometricUnlocked(true);
+      } catch {
+        Alert.alert('Erreur', 'Impossible de lancer la verification biométrique.');
+      } finally {
+        setUnlocking(false);
+      }
+    };
+
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.card}>
+          <Text style={styles.title}>Deverrouillage securise</Text>
+          <Text style={styles.subtitle}>Confirmez votre identite avant d acceder a votre espace laveur.</Text>
+          <TouchableOpacity style={[styles.button, unlocking && styles.buttonDisabled]} onPress={unlock} disabled={unlocking}>
+            {unlocking ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.buttonText}>Deverrouiller</Text>}
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
   }
 
   if (!state.onboardingDone) {
@@ -34,9 +80,55 @@ export default function Index() {
     return <Redirect href={(stepRoutes[state.accountStep] || '/account/auth') as any} />;
   }
 
-  if (state.profileStatus === 'rejected') {
+  if (!canEnterMainApp) {
     return <Redirect href="/account/review" />;
   }
 
   return <Redirect href="/(tabs)" />;
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: DriverColors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: DriverSpacing.lg,
+  },
+  card: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: DriverColors.border,
+    borderRadius: DriverRadius.md,
+    padding: DriverSpacing.lg,
+    gap: DriverSpacing.md,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: DriverColors.text,
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: DriverColors.muted,
+    textAlign: 'center',
+  },
+  button: {
+    height: 48,
+    borderRadius: DriverRadius.md,
+    backgroundColor: DriverColors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonDisabled: {
+    opacity: 0.7,
+  },
+  buttonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+});
